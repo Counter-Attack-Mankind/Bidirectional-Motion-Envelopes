@@ -1,0 +1,59 @@
+{
+  "beta": 0.6,
+  "diagrams": {
+    "risk": {
+      "endpoint_overlap_m2": [
+        0,
+        0
+      ],
+      "intermediate_overlap_m2": 0.20009182116724292,
+      "motion": "linear pose interpolation"
+    },
+    "definition": {
+      "expansions_m": [
+        1.0563375,
+        0.0,
+        0.8893125,
+        0.19741250000000002
+      ],
+      "samples": 90,
+      "outside_area_max_m2": 0.0
+    }
+  },
+  "overview_footprints": {
+    "1": 199,
+    "2": 206,
+    "3": 192,
+    "4": 197,
+    "5": 194,
+    "6": 217,
+    "7": 189,
+    "8": 243,
+    "9": 271,
+    "10": 398,
+    "11": 242,
+    "12": 232
+  },
+  "collision_examples": [
+    {
+      "case": 8,
+      "body_overlap_m2": 0.0868515233463138,
+      "time_s": 8.361
+    },
+    {
+      "case": 11,
+      "body_overlap_m2": 0.08223303046273242,
+      "time_s": 5.277
+    },
+    {
+      "case": 2,
+      "body_overlap_m2": 0.05367616338323973,
+      "time_s": 8.221
+    },
+    {
+      "case": 9,
+      "body_overlap_m2": 0.0391556175242041,
+      "time_s": 8.449
+    }
+  ]
+}

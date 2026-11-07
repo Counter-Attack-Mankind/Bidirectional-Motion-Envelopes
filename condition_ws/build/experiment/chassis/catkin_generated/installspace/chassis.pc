@@ -1,0 +1,8 @@
+prefix=/home/libai/Code/condition_ws/install
+
+Name: chassis
+Description: Description of chassis
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

@@ -1,0 +1,111 @@
+{
+  "solver_runs": 212,
+  "calibration_runs": 72,
+  "comparison_additional_runs": 72,
+  "refinement_runs": 68,
+  "selected_beta": 0.6,
+  "matched_case_checks": [
+    {
+      "case": 1,
+      "nodes": 42,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "23d7c54b2f87be864cb94bf45c4369ba6cc7e3a1d5c430f0987a2020d32e0a93"
+    },
+    {
+      "case": 2,
+      "nodes": 55,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "a46298bf69a2c19d1aa2462826bc9e84f0466318508bf235e8a2d45504d20231"
+    },
+    {
+      "case": 3,
+      "nodes": 40,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "02feb6bf1dd03ba1c636a00a4ba76c182eb5e7b31fc335606cfa3997b899ebfe"
+    },
+    {
+      "case": 4,
+      "nodes": 42,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "949a22d0f3a1514190ab245995dc07dff79fbf35e3b6ef58a09e218f58fbc91e"
+    },
+    {
+      "case": 5,
+      "nodes": 38,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "75a38882ecd9162b55f145e0dbdeb6a119f248699d6af48970ec29ae0ec62433"
+    },
+    {
+      "case": 6,
+      "nodes": 39,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "c3ed63f35643107ec9102a73226ef8f742fa7bcc6e7e87a4085e31a8883f86f7"
+    },
+    {
+      "case": 7,
+      "nodes": 32,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "63bfe40a6847312a74294a6bf346977af892f856b532b6362d0438dc2679bd55"
+    },
+    {
+      "case": 8,
+      "nodes": 44,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "8f83a495a8c521ca32efa89e45e8b36b3d743e11f895ed9c4880759b15da2ccc"
+    },
+    {
+      "case": 9,
+      "nodes": 54,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "cc0bd707f09abeeaa8db70dd7243ca9af8f7d9cdb1db58c70f52b70314303d9e"
+    },
+    {
+      "case": 10,
+      "nodes": 62,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "e4d626bb5b68688e67404508df3cb524e9f413f5522e964350758bf277cc1525"
+    },
+    {
+      "case": 11,
+      "nodes": 64,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "cc3b4e400f2db8c7ca8fef684e01e581030a40cd4b1cd5f23419ab2ff6a1d58f"
+    },
+    {
+      "case": 12,
+      "nodes": 48,
+      "selected_mesh_reproduced": true,
+      "shared_adaptive_initialization": true,
+      "uniform_nodes_doubled": true,
+      "input_sha256": "b24e088917746102231102eaa26bd2ec35d37f2461ee8e9783f9a33c84dec2bc"
+    }
+  ],
+  "largest_bound_violation": 0.0,
+  "largest_selected_envelope_overlap_m2": 0.0,
+  "largest_selected_node_overlap_m2": 0.0,
+  "collision_metrics_reproduced_from_saved_samples": true,
+  "formula_audit": "manuscript/audit/geometry-check.json",
+  "scope": "Saved optimization/model verification and geometric enclosure checks; no continuous dynamics replay."
+}

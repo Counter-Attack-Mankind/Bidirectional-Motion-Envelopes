@@ -1,0 +1,21 @@
+{
+  "case_id": 9,
+  "beta": 0.6,
+  "base_nodes": 54,
+  "final_nodes": 54,
+  "accepted": true,
+  "cumulative_solve_wall_s": 0.34499599999981,
+  "cumulative_process_wall_s": 2.183033900000737,
+  "attempts": [
+    {
+      "nodes": 54,
+      "result": "refine-b0.6-case09-m54",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.34499599999981,
+      "process_wall_s": 2.183033900000737,
+      "collision_samples": 0
+    }
+  ]
+}

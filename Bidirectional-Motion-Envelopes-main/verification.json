@@ -1,0 +1,30 @@
+{
+  "runs": 120,
+  "primary_runs": 108,
+  "threshold_sensitivity_runs": 12,
+  "all_case_input_hashes_verified": true,
+  "all_matched_initial_hashes_equal": true,
+  "all_endpoints_verified": true,
+  "all_objectives_verified": true,
+  "maximum_stored_vs_recomputed_dynamics_residual_difference": 5.551115123125783e-17,
+  "triangle_counterexample_excess": [
+    6.400000000000001,
+    6.400000000000001,
+    6.400000000000001,
+    6.400000000000001,
+    6.3999999999999995,
+    6.3999999999999995,
+    6.3999999999999995,
+    6.3999999999999995
+  ],
+  "triangle_counterexample_overlap": 0.64,
+  "solver_status_counts": {
+    "Solve_Succeeded": 53,
+    "Error_In_Step_Computation": 13,
+    "Maximum_Iterations_Exceeded": 5,
+    "Restoration_Failed": 8,
+    "Solved_To_Acceptable_Level": 8,
+    "Infeasible_Problem_Detected": 33
+  },
+  "scope": "Arithmetic and provenance checks; full geometry is checked separately by evaluate_results.py."
+}

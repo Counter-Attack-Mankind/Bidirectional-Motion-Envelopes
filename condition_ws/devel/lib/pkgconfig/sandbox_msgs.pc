@@ -1,0 +1,8 @@
+prefix=/home/libai/Code/condition_ws/devel
+
+Name: sandbox_msgs
+Description: Description of sandbox_msgs
+Version: 0.0.0
+Cflags: -I/home/libai/Code/condition_ws/devel/include
+Libs: -L${prefix}/lib 
+Requires: 

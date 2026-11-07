@@ -1,0 +1,8 @@
+prefix=/home/libai/Code/condition_ws/install
+
+Name: nokov_localization
+Description: Description of nokov_localization
+Version: 0.0.0
+Cflags: -I${prefix}/include
+Libs: -L${prefix}/lib -lnokov_localization
+Requires: 

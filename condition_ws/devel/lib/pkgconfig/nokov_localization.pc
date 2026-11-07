@@ -1,0 +1,8 @@
+prefix=/home/libai/Code/condition_ws/devel
+
+Name: nokov_localization
+Description: Description of nokov_localization
+Version: 0.0.0
+Cflags: -I/home/libai/Code/condition_ws/src/experiment/nokov_localization/include
+Libs: -L${prefix}/lib -lnokov_localization
+Requires: 

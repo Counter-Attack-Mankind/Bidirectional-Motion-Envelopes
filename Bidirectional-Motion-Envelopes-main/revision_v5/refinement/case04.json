@@ -1,0 +1,41 @@
+{
+  "case_id": 4,
+  "beta": 0.6,
+  "base_nodes": 42,
+  "final_nodes": 62,
+  "accepted": true,
+  "cumulative_solve_wall_s": 0.445966600018437,
+  "cumulative_process_wall_s": 4.252359799997066,
+  "attempts": [
+    {
+      "nodes": 42,
+      "result": "refine-b0.6-case04-m42",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.14115550000860821,
+      "process_wall_s": 1.3467320000054315,
+      "collision_samples": 337
+    },
+    {
+      "nodes": 51,
+      "result": "refine-b0.6-case04-m51",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.14170770000782795,
+      "process_wall_s": 1.4451537999993889,
+      "collision_samples": 1
+    },
+    {
+      "nodes": 62,
+      "result": "refine-b0.6-case04-m62",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.16310340000200085,
+      "process_wall_s": 1.4604739999922458,
+      "collision_samples": 0
+    }
+  ]
+}

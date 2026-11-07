@@ -1,0 +1,10 @@
+<!-- 定位：VRPN + Nokov -->
+<launch>
+  <arg name="server" default="10.1.1.198"/>
+
+  <include file="$(find vrpn_client_ros)/launch/sample.launch">
+    <arg name="server" value="$(arg server)"/>
+  </include>
+
+  <node pkg="nokov_localization" type="nokov_localization_v2.py" name="nokov" output="screen"/>
+</launch>

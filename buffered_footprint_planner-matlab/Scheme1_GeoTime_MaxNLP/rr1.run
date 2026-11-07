@@ -1,0 +1,108 @@
+reset;
+
+shell ("if not exist runtime mkdir runtime");
+
+# =========================
+# 初始化求解标志
+# =========================
+shell ("if exist runtime\opti_flag.txt del runtime\opti_flag.txt");
+
+printf "0" > "runtime/opti_flag.txt";
+close "runtime/opti_flag.txt";
+
+# =========================
+# 删除旧输出
+# =========================
+shell ("if exist runtime\x.txt del runtime\x.txt");
+shell ("if exist runtime\y.txt del runtime\y.txt");
+shell ("if exist runtime\theta.txt del runtime\theta.txt");
+shell ("if exist runtime\v.txt del runtime\v.txt");
+shell ("if exist runtime\a.txt del runtime\a.txt");
+shell ("if exist runtime\phy.txt del runtime\phy.txt");
+shell ("if exist runtime\w.txt del runtime\w.txt");
+
+shell ("if exist runtime\dt.txt del runtime\dt.txt");
+shell ("if exist runtime\s.txt del runtime\s.txt");
+shell ("if exist runtime\splus.txt del runtime\splus.txt");
+shell ("if exist runtime\sminus.txt del runtime\sminus.txt");
+shell ("if exist runtime\k.txt del runtime\k.txt");
+shell ("if exist runtime\up.txt del runtime\up.txt");
+shell ("if exist runtime\down.txt del runtime\down.txt");
+shell ("if exist runtime\left.txt del runtime\left.txt");
+shell ("if exist runtime\right.txt del runtime\right.txt");
+
+# =========================
+# 加载本 Scheme 的模型与初值
+# =========================
+model NLP1.mod;
+include ig.INIVAL;
+
+option solver "../public/solver/ipopt.exe";
+option ipopt_options 'option_file_name=../public/solver/ipopt.opt';
+solve;
+
+# =========================
+# 写求解状态
+# =========================
+shell ("if exist runtime\opti_flag.txt del runtime\opti_flag.txt");
+
+if match (solve_message, "Optimal") > 0 then {
+    printf "1" > "runtime/opti_flag.txt";
+} else {
+    printf "0" > "runtime/opti_flag.txt";
+};
+
+close "runtime/opti_flag.txt";
+
+
+# =========================
+# 节点变量：1..Nfe
+# =========================
+for {i in 1..Nfe} {
+    printf "%12.8f\n", x[i]      >> "runtime/x.txt";
+    printf "%12.8f\n", y[i]      >> "runtime/y.txt";
+    printf "%12.8f\n", theta[i]  >> "runtime/theta.txt";
+    printf "%12.8f\n", v[i]      >> "runtime/v.txt";
+    printf "%12.8f\n", a[i]      >> "runtime/a.txt";
+    printf "%12.8f\n", phy[i]    >> "runtime/phy.txt";
+    printf "%12.8f\n", w[i]      >> "runtime/w.txt";
+}
+
+# =========================
+# 区间变量：1..Nfe-1
+# =========================
+for {i in 1..Nfe-1} {
+    printf "%12.8f\n", dt[i]     >> "runtime/dt.txt";
+    printf "%12.8f\n", s[i]      >> "runtime/s.txt";
+    printf "%12.8f\n", splus[i]  >> "runtime/splus.txt";
+    printf "%12.8f\n", sminus[i] >> "runtime/sminus.txt";
+    printf "%12.8f\n", k[i]      >> "runtime/k.txt";
+    printf "%12.8f\n", up[i]     >> "runtime/up.txt";
+    printf "%12.8f\n", down[i]   >> "runtime/down.txt";
+    printf "%12.8f\n", left[i]   >> "runtime/left.txt";
+    printf "%12.8f\n", right[i]  >> "runtime/right.txt";
+}
+
+# =========================
+# 关闭文件
+# =========================
+close "runtime/x.txt";
+close "runtime/y.txt";
+close "runtime/theta.txt";
+close "runtime/v.txt";
+close "runtime/a.txt";
+close "runtime/phy.txt";
+close "runtime/w.txt";
+
+close "runtime/dt.txt";
+close "runtime/s.txt";
+close "runtime/splus.txt";
+close "runtime/sminus.txt";
+close "runtime/k.txt";
+close "runtime/up.txt";
+close "runtime/down.txt";
+close "runtime/left.txt";
+close "runtime/right.txt";
+
+display sum{i in 1..Nfe-1}(dt[i]);
+display tf;

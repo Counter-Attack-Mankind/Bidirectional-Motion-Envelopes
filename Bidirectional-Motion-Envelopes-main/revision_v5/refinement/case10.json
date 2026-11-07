@@ -1,0 +1,31 @@
+{
+  "case_id": 10,
+  "beta": 0.6,
+  "base_nodes": 62,
+  "final_nodes": 75,
+  "accepted": true,
+  "cumulative_solve_wall_s": 0.5631915999983903,
+  "cumulative_process_wall_s": 4.260264500015182,
+  "attempts": [
+    {
+      "nodes": 62,
+      "result": "refine-b0.6-case10-m62",
+      "solver_success": false,
+      "feasible": true,
+      "solver_status": "Error_In_Step_Computation",
+      "solve_wall_s": 0.31161689999862574,
+      "process_wall_s": 2.1701020000036806,
+      "collision_samples": 0
+    },
+    {
+      "nodes": 75,
+      "result": "refine-b0.6-case10-m75",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.25157469999976456,
+      "process_wall_s": 2.090162500011502,
+      "collision_samples": 0
+    }
+  ]
+}

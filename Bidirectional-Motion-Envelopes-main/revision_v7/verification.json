@@ -1,0 +1,8 @@
+{
+  "runs": 217,
+  "all_ma27": true,
+  "matched_initializations": true,
+  "matched_placement": true,
+  "max_successful_bound_violation": 0,
+  "hsl_library_sha256": "09067dc14b3bf1be3923069daa261a7e71396c7d6caa85ee8c70f3ec20e978fc"
+}

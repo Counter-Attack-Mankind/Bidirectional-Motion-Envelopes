@@ -1,0 +1,60 @@
+{
+  "selected_beta": 0.6,
+  "rule": "Highest count of successful, feasible, collision-free solves; then lowest median solver time; then mean node count.",
+  "calibration": [
+    {
+      "beta": 0.5,
+      "count": 12,
+      "successful": 12,
+      "median_s": 0.3020122999951127,
+      "mean_nodes": 55.833333333333336,
+      "max_nodes": 79,
+      "min_nodes": 38
+    },
+    {
+      "beta": 0.6,
+      "count": 12,
+      "successful": 12,
+      "median_s": 0.21817040000314591,
+      "mean_nodes": 46.666666666666664,
+      "max_nodes": 64,
+      "min_nodes": 32
+    },
+    {
+      "beta": 0.7,
+      "count": 12,
+      "successful": 12,
+      "median_s": 0.23275380000995938,
+      "mean_nodes": 40,
+      "max_nodes": 53,
+      "min_nodes": 28
+    },
+    {
+      "beta": 0.8,
+      "count": 12,
+      "successful": 11,
+      "median_s": 0.1630767000024207,
+      "mean_nodes": 35.333333333333336,
+      "max_nodes": 48,
+      "min_nodes": 24
+    },
+    {
+      "beta": 0.9,
+      "count": 12,
+      "successful": 11,
+      "median_s": 0.1194411999967997,
+      "mean_nodes": 31.75,
+      "max_nodes": 43,
+      "min_nodes": 22
+    },
+    {
+      "beta": 1.0,
+      "count": 12,
+      "successful": 6,
+      "median_s": 0.18622365000192076,
+      "mean_nodes": 28.333333333333332,
+      "max_nodes": 37,
+      "min_nodes": 20
+    }
+  ]
+}

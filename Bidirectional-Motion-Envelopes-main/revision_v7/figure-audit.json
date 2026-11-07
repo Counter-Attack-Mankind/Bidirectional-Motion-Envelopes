@@ -1,0 +1,81 @@
+{
+  "beta": 0.6,
+  "diagrams": {
+    "risk": {
+      "endpoint_overlap_m2": [
+        0.0,
+        0.0
+      ],
+      "intermediate_overlap_m2": 0.08355964947172023,
+      "motion": "constant-curvature circular arc",
+      "obstacle_vertices": [
+        [
+          4.198152619814489,
+          -0.9560520333587902
+        ],
+        [
+          5.001592652526624,
+          -1.4105672848471462
+        ],
+        [
+          4.430750039699656,
+          -1.8493596177118858
+        ],
+        [
+          4.198152619814489,
+          -0.9560520333587902
+        ]
+      ]
+    },
+    "definition": {
+      "type": "generic geometric definition with illustrative reverse sweep",
+      "illustrative_expansions_m": [
+        0.85,
+        1.0,
+        0.75,
+        0.75
+      ],
+      "evaluated_motion": false,
+      "half_width_symbol": "upright L_hw",
+      "wheelbase_symbol": "upright L_w",
+      "orientation_deg": 130,
+      "sweep_outside_area_m2": 0.0
+    }
+  },
+  "overview_footprints": {
+    "1": 199,
+    "2": 206,
+    "3": 202,
+    "4": 196,
+    "5": 195,
+    "6": 217,
+    "7": 189,
+    "8": 243,
+    "9": 265,
+    "10": 398,
+    "11": 240,
+    "12": 233
+  },
+  "collision_examples": [
+    {
+      "case": 11,
+      "body_overlap_m2": 0.08223303046273253,
+      "time_s": 5.277
+    },
+    {
+      "case": 8,
+      "body_overlap_m2": 0.07795216529047977,
+      "time_s": 8.261000000000001
+    },
+    {
+      "case": 2,
+      "body_overlap_m2": 0.07474838572059778,
+      "time_s": 8.308
+    },
+    {
+      "case": 9,
+      "body_overlap_m2": 0.06644247771971386,
+      "time_s": 8.542
+    }
+  ]
+}

@@ -1,0 +1,167 @@
+{
+  "scope": "Setup verification for the final v5 model. This check itself performs no NLP solve.",
+  "config": {
+    "clearance": 0.0,
+    "certificate_epsilon": 0.0,
+    "area_epsilon": 0.01,
+    "h_min": 0.001,
+    "h_max": 0.5,
+    "T_max": 60.0,
+    "max_iter": 3000,
+    "max_cpu_time": 180.0,
+    "tol": 1e-09,
+    "acceptable_tol": 1e-08,
+    "feasibility_tol": 1e-07,
+    "dense_dt": 0.001,
+    "mesh": "adaptive",
+    "mesh_candidate_dt": 0.001,
+    "angle_max": 1.5,
+    "tangent_constraints": false
+  },
+  "formula_samples": 100000,
+  "formula_max_error": 4.440892098500626e-16,
+  "meshes": [
+    {
+      "case": 1,
+      "nodes": 42,
+      "intervals": 41,
+      "obstacle_limited_intervals": 17,
+      "minimum_dt_s": 0.09894143676607525,
+      "maximum_dt_s": 0.3000000000000007,
+      "gear_segments": 3,
+      "seed_sha256": "931c4b0dbe068cc2f5b3b7f227179d33e35aca8680780352f156c42531c8c7f9"
+    },
+    {
+      "case": 2,
+      "nodes": 55,
+      "intervals": 54,
+      "obstacle_limited_intervals": 15,
+      "minimum_dt_s": 0.04278628402312634,
+      "maximum_dt_s": 0.3000000000000007,
+      "gear_segments": 5,
+      "seed_sha256": "e4c27de7730713f316648aa14b6122db97fd74867f9f208a48d4dd25ae16b1cf"
+    },
+    {
+      "case": 3,
+      "nodes": 40,
+      "intervals": 39,
+      "obstacle_limited_intervals": 13,
+      "minimum_dt_s": 0.027674942511886513,
+      "maximum_dt_s": 0.3000000000000007,
+      "gear_segments": 2,
+      "seed_sha256": "75442954694eff8c00d14376529072ad7b1ee953cc38b2c59263287da5522eb3"
+    },
+    {
+      "case": 4,
+      "nodes": 42,
+      "intervals": 41,
+      "obstacle_limited_intervals": 15,
+      "minimum_dt_s": 0.04100000000000037,
+      "maximum_dt_s": 0.3000000000000007,
+      "gear_segments": 2,
+      "seed_sha256": "5ef7165667bf82379ffde6a5a76d86384ee754820dcbd1a801e6e06baa3a485d"
+    },
+    {
+      "case": 5,
+      "nodes": 38,
+      "intervals": 37,
+      "obstacle_limited_intervals": 12,
+      "minimum_dt_s": 0.013978444897089659,
+      "maximum_dt_s": 0.30000000000000027,
+      "gear_segments": 2,
+      "seed_sha256": "70631c7649f053492b5e26a4249b1e600ad9a1d8a44ae01fd122dfaa9fde19bb"
+    },
+    {
+      "case": 6,
+      "nodes": 39,
+      "intervals": 38,
+      "obstacle_limited_intervals": 5,
+      "minimum_dt_s": 0.05799999999999983,
+      "maximum_dt_s": 0.3000000000000007,
+      "gear_segments": 2,
+      "seed_sha256": "f6fdfcc5164e59ea04ba30195874153eca512f6f81f8b6823f7b6dffc9b197db"
+    },
+    {
+      "case": 7,
+      "nodes": 32,
+      "intervals": 31,
+      "obstacle_limited_intervals": 7,
+      "minimum_dt_s": 0.0824536237130693,
+      "maximum_dt_s": 0.30000000000000004,
+      "gear_segments": 2,
+      "seed_sha256": "1cd8899f05f5f058266f228e1076d46472060b54335e886cfe442624cb991d6d"
+    },
+    {
+      "case": 8,
+      "nodes": 44,
+      "intervals": 43,
+      "obstacle_limited_intervals": 9,
+      "minimum_dt_s": 0.06299999999999994,
+      "maximum_dt_s": 0.3000000000000007,
+      "gear_segments": 3,
+      "seed_sha256": "53a32d659a5c272b670c29d9ebefe3ab45197702f88a996c34bbda302de361cf"
+    },
+    {
+      "case": 9,
+      "nodes": 54,
+      "intervals": 53,
+      "obstacle_limited_intervals": 21,
+      "minimum_dt_s": 0.054999999999999716,
+      "maximum_dt_s": 0.3000000000000007,
+      "gear_segments": 3,
+      "seed_sha256": "a46214a1f487a5020e15004abad562d9732a43e8802764f555d01fe991899024"
+    },
+    {
+      "case": 10,
+      "nodes": 62,
+      "intervals": 61,
+      "obstacle_limited_intervals": 19,
+      "minimum_dt_s": 0.09100000000000019,
+      "maximum_dt_s": 0.3000000000000007,
+      "gear_segments": 3,
+      "seed_sha256": "02c0c9d554ab54a153cbf7b7b11cc692e772bfbb5bb0a35c3cb8ad46889f1ccf"
+    },
+    {
+      "case": 11,
+      "nodes": 64,
+      "intervals": 63,
+      "obstacle_limited_intervals": 30,
+      "minimum_dt_s": 0.01701077584520405,
+      "maximum_dt_s": 0.3000000000000007,
+      "gear_segments": 4,
+      "seed_sha256": "c2cdb605e7f58e161fa0a206e6c0454f5ceb7356d2af241e7e3c1fccbf88ee09"
+    },
+    {
+      "case": 12,
+      "nodes": 48,
+      "intervals": 47,
+      "obstacle_limited_intervals": 15,
+      "minimum_dt_s": 0.028999999999999915,
+      "maximum_dt_s": 0.3000000000000007,
+      "gear_segments": 2,
+      "seed_sha256": "7a141b0cc34a582bf1571b6ea5f53854465bb2561ace81c6f91b989d0f5edb45"
+    }
+  ],
+  "certificate_checks": [
+    {
+      "case": "separated",
+      "gap_m": 1.0,
+      "normal_squared": 1.0
+    },
+    {
+      "case": "touching",
+      "gap_m": 0.0,
+      "normal_squared": 1.0
+    },
+    {
+      "case": "overlapping",
+      "gap_m": -0.25,
+      "normal_squared": 1.0
+    }
+  ],
+  "interpolation_checker": {
+    "between_node_collision_detected": true,
+    "distant_stationary_body_clear": true,
+    "solver_status_preserved": true
+  }
+}

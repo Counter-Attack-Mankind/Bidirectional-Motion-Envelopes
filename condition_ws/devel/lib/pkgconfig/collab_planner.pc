@@ -1,0 +1,8 @@
+prefix=/home/libai/Code/condition_ws/devel
+
+Name: collab_planner
+Description: Description of collab_planner
+Version: 1.0.0
+Cflags: -I/home/libai/Code/condition_ws/devel/include -I/home/libai/Code/condition_ws/src/collab_planner/. -I/usr/include
+Libs: -L${prefix}/lib -lcollab_planner /usr/lib/x86_64-linux-gnu/libboost_system.so.1.71.0
+Requires: roscpp std_msgs geometry_msgs message_runtime

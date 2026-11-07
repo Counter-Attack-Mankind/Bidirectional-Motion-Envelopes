@@ -1,0 +1,100 @@
+{
+  "short_motion": {
+    "intervals": 4,
+    "structural_min": 3,
+    "times": [
+      0.0,
+      0.066,
+      0.132,
+      0.198,
+      0.2
+    ]
+  },
+  "small_beta_failure": "No admissible seed interval above h_min at t=0.00000000.",
+  "cases": [
+    {
+      "case": 1,
+      "nodes": 42,
+      "necessary_intervals": 9,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    },
+    {
+      "case": 2,
+      "nodes": 55,
+      "necessary_intervals": 9,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    },
+    {
+      "case": 3,
+      "nodes": 40,
+      "necessary_intervals": 12,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    },
+    {
+      "case": 4,
+      "nodes": 42,
+      "necessary_intervals": 11,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    },
+    {
+      "case": 5,
+      "nodes": 38,
+      "necessary_intervals": 13,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    },
+    {
+      "case": 6,
+      "nodes": 39,
+      "necessary_intervals": 13,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    },
+    {
+      "case": 7,
+      "nodes": 32,
+      "necessary_intervals": 12,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    },
+    {
+      "case": 8,
+      "nodes": 44,
+      "necessary_intervals": 11,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    },
+    {
+      "case": 9,
+      "nodes": 54,
+      "necessary_intervals": 10,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    },
+    {
+      "case": 10,
+      "nodes": 62,
+      "necessary_intervals": 13,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    },
+    {
+      "case": 11,
+      "nodes": 64,
+      "necessary_intervals": 10,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    },
+    {
+      "case": 12,
+      "nodes": 48,
+      "necessary_intervals": 13,
+      "unchanged_seed": true,
+      "max_overlap_m2": 0
+    }
+  ]
+}

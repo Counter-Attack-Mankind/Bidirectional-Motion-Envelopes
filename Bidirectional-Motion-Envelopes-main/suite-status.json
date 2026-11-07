@@ -1,0 +1,537 @@
+[
+  {
+    "run": "body-n100-p0.00-case01",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case01",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.00-case02",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.00-case02",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case02",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.00-case03",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.00-case03",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case03",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.00-case04",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.00-case04",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case04",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.00-case05",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.00-case05",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case05",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.00-case06",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.00-case06",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case06",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.00-case07",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.00-case07",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case07",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.00-case08",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.00-case08",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case08",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.00-case09",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.00-case09",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case09",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.00-case10",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.00-case10",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case10",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.00-case11",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.00-case11",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case11",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.00-case12",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.00-case12",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.00-case12",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case01",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case01",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case01",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case02",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case02",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case02",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case03",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case03",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case03",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case04",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case04",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case04",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case05",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case05",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case05",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case06",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case06",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case06",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case07",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case07",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case07",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case08",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case08",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case08",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case09",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case09",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case09",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case10",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case10",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case10",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case11",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case11",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case11",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n100-p0.30-case12",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n100-p0.30-case12",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n100-p0.30-case12",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case01",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case01",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case01",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case02",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case02",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case02",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case03",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case03",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case03",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case04",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case04",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case04",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case05",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case05",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case05",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case06",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case06",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case06",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case07",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case07",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case07",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case08",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case08",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case08",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case09",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case09",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case09",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case10",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case10",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case10",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case11",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case11",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case11",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "obca-n50-p0.00-case12",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "body-n50-p0.00-case12",
+    "exit_code": 0,
+    "output_exists": true
+  },
+  {
+    "run": "triangle-n50-p0.00-case12",
+    "exit_code": 0,
+    "output_exists": true
+  }
+]

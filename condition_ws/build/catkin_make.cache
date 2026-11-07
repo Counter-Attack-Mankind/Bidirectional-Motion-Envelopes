@@ -1,0 +1,2 @@
+collab_planner:condition_planner:experiment/chassis:experiment/nokov_localization:experiment/pure_pursuit:experiment/sandbox_msgs:experiment/vrpn_client_ros
+-DCATKIN_DEVEL_PREFIX=/home/libai/Code/condition_ws/devel -DCMAKE_INSTALL_PREFIX=/home/libai/Code/condition_ws/install -G Unix Makefiles

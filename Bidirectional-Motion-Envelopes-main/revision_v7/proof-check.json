@@ -1,0 +1,25 @@
+{
+  "seed": 20261019,
+  "random_geometries": 4000,
+  "driving_directions_per_geometry": 2,
+  "critical_angle_branches": {
+    "forward_front": {
+      "endpoint": 2364,
+      "interior": 1636
+    },
+    "forward_right": {
+      "endpoint": 1415,
+      "interior": 2585
+    },
+    "reverse_rear": {
+      "endpoint": 2540,
+      "interior": 1460
+    },
+    "reverse_right": {
+      "endpoint": 1568,
+      "interior": 2432
+    }
+  },
+  "max_extremum_disagreement_m": 2.2737367544323206e-13,
+  "max_bound_violation_m": 0.0
+}

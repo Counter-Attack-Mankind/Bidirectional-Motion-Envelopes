@@ -1,0 +1,25 @@
+<!-- 实车轨迹回放：读CSV → 发布/traj → pure_pursuit跟踪 → chassis控制 -->
+<launch>
+  <!-- 车辆ID -->
+  <arg name="target" default="0"/>
+  <!-- 轨迹文件 -->
+  <arg name="csv_file" default="$(find condition_planner)/config/trajectory_v1.csv"/>
+
+  <!-- 轨迹回放 -->
+  <node name="trajectory_replay" pkg="condition_planner" type="trajectory_replay_node" output="screen">
+    <param name="csv_file" value="$(arg csv_file)"/>
+    <param name="target" value="$(arg target)"/>
+  </node>
+
+  <!-- Pure Pursuit 控制器 -->
+  <node name="pure_pursuit" pkg="pure_pursuit" type="pure_pursuit_node" output="screen">
+    <param name="target" value="$(arg target)"/>
+  </node>
+
+  <!-- 底盘硬件接口 -->
+  <node name="chassis" pkg="chassis" type="chassis_node" output="screen"/>
+
+  <!-- RViz可视化 -->
+  <node name="rviz" pkg="rviz" type="rviz"
+        args="-d $(find condition_planner)/config/rviz.rviz"/>
+</launch>

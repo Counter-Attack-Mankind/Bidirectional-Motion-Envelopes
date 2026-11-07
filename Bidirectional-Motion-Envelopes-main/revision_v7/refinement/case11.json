@@ -1,0 +1,111 @@
+{
+  "case_id": 11,
+  "beta": 0.6,
+  "base_nodes": 64,
+  "final_nodes": 338,
+  "accepted": true,
+  "cumulative_solve_wall_s": 9.999194199917838,
+  "cumulative_process_wall_s": 44.48978010006249,
+  "attempts": [
+    {
+      "nodes": 64,
+      "result": "refine-b0.6-case11-m64",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.12138580001192167,
+      "process_wall_s": 1.4721565000363626,
+      "collision_samples": 243
+    },
+    {
+      "nodes": 77,
+      "result": "refine-b0.6-case11-m77",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.099097799975425,
+      "process_wall_s": 1.5485860999906436,
+      "collision_samples": 200
+    },
+    {
+      "nodes": 93,
+      "result": "refine-b0.6-case11-m93",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.5409300999599509,
+      "process_wall_s": 2.1997905999887735,
+      "collision_samples": 145
+    },
+    {
+      "nodes": 112,
+      "result": "refine-b0.6-case11-m112",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.1089584999717772,
+      "process_wall_s": 2.004261600028258,
+      "collision_samples": 125
+    },
+    {
+      "nodes": 135,
+      "result": "refine-b0.6-case11-m135",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.3672258000005968,
+      "process_wall_s": 2.7478609000099823,
+      "collision_samples": 12
+    },
+    {
+      "nodes": 162,
+      "result": "refine-b0.6-case11-m162",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.6047193999984302,
+      "process_wall_s": 3.3342734999605455,
+      "collision_samples": 18
+    },
+    {
+      "nodes": 195,
+      "result": "refine-b0.6-case11-m195",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.17490370001178235,
+      "process_wall_s": 3.5771185000194237,
+      "collision_samples": 11
+    },
+    {
+      "nodes": 234,
+      "result": "refine-b0.6-case11-m234",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.2451708999578841,
+      "process_wall_s": 4.934946699999273,
+      "collision_samples": 59
+    },
+    {
+      "nodes": 281,
+      "result": "refine-b0.6-case11-m281",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 3.0624598000431433,
+      "process_wall_s": 9.542180499993265,
+      "collision_samples": 53
+    },
+    {
+      "nodes": 338,
+      "result": "refine-b0.6-case11-m338",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solved_To_Acceptable_Level",
+      "solve_wall_s": 4.6743423999869265,
+      "process_wall_s": 13.128605200035963,
+      "collision_samples": 0
+    }
+  ]
+}

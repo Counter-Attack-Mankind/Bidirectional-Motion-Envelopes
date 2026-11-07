@@ -1,0 +1,92 @@
+{
+  "body-n100-p0.00": {
+    "count": 12,
+    "solver_success": 9,
+    "valid_plan": 3,
+    "node_clear": 12,
+    "collision_free": 7,
+    "median_wall_s": 2.739069650000147,
+    "median_valid_wall_s": 2.0764061999998376
+  },
+  "body-n100-p0.30": {
+    "count": 12,
+    "solver_success": 7,
+    "valid_plan": 4,
+    "node_clear": 12,
+    "collision_free": 7,
+    "median_wall_s": 1.8614478999998028,
+    "median_valid_wall_s": 1.9722827999999026
+  },
+  "body-n50-p0.00": {
+    "count": 12,
+    "solver_success": 7,
+    "valid_plan": 6,
+    "node_clear": 12,
+    "collision_free": 6,
+    "median_wall_s": 1.0026189999998678,
+    "median_valid_wall_s": 1.0026189999998678
+  },
+  "obca-n100-p0.00": {
+    "count": 12,
+    "solver_success": 9,
+    "valid_plan": 12,
+    "node_clear": 12,
+    "collision_free": 12,
+    "median_wall_s": 2.7920728499998404,
+    "median_valid_wall_s": 2.7920728499998404
+  },
+  "obca-n100-p0.30": {
+    "count": 12,
+    "solver_success": 8,
+    "valid_plan": 11,
+    "node_clear": 12,
+    "collision_free": 12,
+    "median_wall_s": 1.648510299999998,
+    "median_valid_wall_s": 1.4197759999997288
+  },
+  "obca-n50-p0.00": {
+    "count": 12,
+    "solver_success": 11,
+    "valid_plan": 11,
+    "node_clear": 12,
+    "collision_free": 12,
+    "median_wall_s": 0.46455494999963776,
+    "median_valid_wall_s": 0.4045974999999089
+  },
+  "triangle-n100-p0.00-eps1e-04": {
+    "count": 12,
+    "solver_success": 2,
+    "valid_plan": 4,
+    "node_clear": 12,
+    "collision_free": 9,
+    "median_wall_s": 7.390216249999867,
+    "median_valid_wall_s": 8.719513849999657
+  },
+  "triangle-n100-p0.00": {
+    "count": 12,
+    "solver_success": 5,
+    "valid_plan": 9,
+    "node_clear": 11,
+    "collision_free": 9,
+    "median_wall_s": 7.472560000000158,
+    "median_valid_wall_s": 9.157165200000236
+  },
+  "triangle-n100-p0.30": {
+    "count": 12,
+    "solver_success": 0,
+    "valid_plan": 11,
+    "node_clear": 12,
+    "collision_free": 12,
+    "median_wall_s": 2.852463700000044,
+    "median_valid_wall_s": 2.766942299999755
+  },
+  "triangle-n50-p0.00": {
+    "count": 12,
+    "solver_success": 3,
+    "valid_plan": 12,
+    "node_clear": 12,
+    "collision_free": 12,
+    "median_wall_s": 1.058625099999972,
+    "median_valid_wall_s": 1.058625099999972
+  }
+}

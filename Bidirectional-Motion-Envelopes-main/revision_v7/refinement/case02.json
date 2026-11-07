@@ -1,0 +1,151 @@
+{
+  "case_id": 2,
+  "beta": 0.6,
+  "base_nodes": 55,
+  "final_nodes": 550,
+  "accepted": false,
+  "cumulative_solve_wall_s": 2.8751357999863103,
+  "cumulative_process_wall_s": 53.34671379998326,
+  "attempts": [
+    {
+      "nodes": 55,
+      "result": "refine-b0.6-case02-m55",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.19045589998131618,
+      "process_wall_s": 1.2596036999602802,
+      "collision_samples": 21
+    },
+    {
+      "nodes": 66,
+      "result": "refine-b0.6-case02-m66",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.08041080000111833,
+      "process_wall_s": 1.1747616999782622,
+      "collision_samples": 194
+    },
+    {
+      "nodes": 80,
+      "result": "refine-b0.6-case02-m80",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.07490970002254471,
+      "process_wall_s": 1.2474392000003718,
+      "collision_samples": 139
+    },
+    {
+      "nodes": 96,
+      "result": "refine-b0.6-case02-m96",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.0762133999960497,
+      "process_wall_s": 1.537316500034649,
+      "collision_samples": 91
+    },
+    {
+      "nodes": 116,
+      "result": "refine-b0.6-case02-m116",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.047900900011882186,
+      "process_wall_s": 1.5568921000231057,
+      "collision_samples": 97
+    },
+    {
+      "nodes": 140,
+      "result": "refine-b0.6-case02-m140",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.051639100012835115,
+      "process_wall_s": 1.778916899987962,
+      "collision_samples": 87
+    },
+    {
+      "nodes": 168,
+      "result": "refine-b0.6-case02-m168",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.07993149996036664,
+      "process_wall_s": 2.0830852999933995,
+      "collision_samples": 76
+    },
+    {
+      "nodes": 202,
+      "result": "refine-b0.6-case02-m202",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.1962375000002794,
+      "process_wall_s": 2.6449485000339337,
+      "collision_samples": 65
+    },
+    {
+      "nodes": 243,
+      "result": "refine-b0.6-case02-m243",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.281813699984923,
+      "process_wall_s": 3.341164299985394,
+      "collision_samples": 54
+    },
+    {
+      "nodes": 292,
+      "result": "refine-b0.6-case02-m292",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.14029770001070574,
+      "process_wall_s": 4.026488999952562,
+      "collision_samples": 47
+    },
+    {
+      "nodes": 351,
+      "result": "refine-b0.6-case02-m351",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.20175180002115667,
+      "process_wall_s": 5.270008600025903,
+      "collision_samples": 40
+    },
+    {
+      "nodes": 422,
+      "result": "refine-b0.6-case02-m422",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.45192179997684434,
+      "process_wall_s": 7.038298900006339,
+      "collision_samples": 35
+    },
+    {
+      "nodes": 507,
+      "result": "refine-b0.6-case02-m507",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.5039752000011504,
+      "process_wall_s": 9.42120059998706,
+      "collision_samples": 19
+    },
+    {
+      "nodes": 550,
+      "result": "refine-b0.6-case02-m550",
+      "solver_success": true,
+      "feasible": true,
+      "solver_status": "Solve_Succeeded",
+      "solve_wall_s": 0.4976768000051379,
+      "process_wall_s": 10.96658850001404,
+      "collision_samples": 22
+    }
+  ]
+}

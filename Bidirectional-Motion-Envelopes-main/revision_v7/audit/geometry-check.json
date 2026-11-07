@@ -1,0 +1,29 @@
+{
+  "seed": 20261011,
+  "segments_per_model": 6035,
+  "body_vertex_evaluations": {
+    "arc": 4852140,
+    "affine": 4852140
+  },
+  "max_signed_bound_violation_m": {
+    "arc": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "affine": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "includes_negative_curvature": true,
+  "includes_straight_and_stationary": true,
+  "angular_range_rad": [
+    0,
+    1.5707963267948966
+  ],
+  "scope": "Independent formula audit; not a replacement for analytical proofs or experimental results."
+}

@@ -1,0 +1,18 @@
+[警告: 名称不存在或不是目录: C:\Users\BaiLi\Desktop\TMECH对比算法6-1\Benchmarks] 
+[警告: 名称不存在或不是目录: C:\Users\BaiLi\Desktop\TMECH对比算法6-1\Searcher] 
+[警告: 名称不存在或不是目录: C:\Users\BaiLi\Desktop\TMECH对比算法6-1\Task] 
+[警告: 名称不存在或不是目录: C:\Users\BaiLi\Desktop\TMECH对比算法6-1\Visual] 
+[警告: 名称不存在或不是目录: C:\Users\BaiLi\Desktop\TMECH对比算法6-1\Tool] 
+[警告: 名称不存在或不是目录: C:\Users\BaiLi\Desktop\TMECH对比算法6-1\Replan] 
+CASE 01 OK: 1.207 s search, 9.123 m, 9.871 s timing, 47 nodes
+CASE 02 OK: 10.240 s search, 12.087 m, 13.226 s timing, 62 nodes
+CASE 03 OK: 0.101 s search, 10.537 m, 9.123 s timing, 43 nodes
+CASE 04 OK: 0.265 s search, 11.270 m, 9.475 s timing, 45 nodes
+CASE 05 OK: 0.131 s search, 11.261 m, 8.982 s timing, 41 nodes
+CASE 06 OK: 0.237 s search, 12.990 m, 10.146 s timing, 46 nodes
+CASE 07 OK: 0.027 s search, 9.497 m, 8.005 s timing, 37 nodes
+CASE 08 OK: 0.018 s search, 11.375 m, 10.842 s timing, 50 nodes
+CASE 09 OK: 1.582 s search, 13.343 m, 11.757 s timing, 55 nodes
+CASE 10 OK: 3.919 s search, 19.532 m, 14.996 s timing, 69 nodes
+CASE 11 OK: 1.204 s search, 11.630 m, 13.239 s timing, 62 nodes
+CASE 12 OK: 1.164 s search, 14.972 m, 10.981 s timing, 49 nodes

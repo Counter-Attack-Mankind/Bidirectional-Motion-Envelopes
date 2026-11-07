@@ -1,0 +1,13 @@
+<launch>
+  <arg name="env_file" default="$(find buffered_footprint_planner)/config/env.json"/>
+  <arg name="planner_config" default="$(find buffered_footprint_planner)/config/planner.yaml"/>
+  <arg name="launch_rviz" default="true"/>
+
+  <node pkg="buffered_footprint_planner" type="map_node" name="buffered_footprint_map" output="screen" required="true">
+    <rosparam command="load" file="$(arg planner_config)"/>
+    <param name="env_file" value="$(arg env_file)"/>
+  </node>
+
+  <node if="$(arg launch_rviz)" pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find buffered_footprint_planner)/config/rviz.rviz"/>
+</launch>

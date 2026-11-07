@@ -1,0 +1,126 @@
+Panels:
+  - Class: rviz/Displays
+    Help Height: 138
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /PlannerMarkers1
+        - /PlannerMarkers1/Namespaces1
+        - /MarkerArray1
+        - /MarkerArray1/Namespaces1
+        - /Marker1
+        - /Marker1/Namespaces1
+      Splitter Ratio: 0.5
+    Tree Height: 765
+  - Class: rviz/Tool Properties
+    Expanded: ~
+    Name: Tool Properties
+    Splitter Ratio: 0.5
+Preferences:
+  PromptSaveOnExit: true
+Toolbars:
+  toolButtonStyle: 2
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 0.10000000149011612
+      Class: rviz/Grid
+      Color: 100; 100; 100
+      Enabled: false
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 50
+      Reference Frame: world
+      Value: false
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /condition_planner_markers
+      Name: PlannerMarkers
+      Namespaces:
+        Border: false
+        Goal: true
+        GoalHeading: true
+        Obstacle_0: false
+        Obstacle_1: false
+        Obstacle_2: false
+        Obstacle_3: false
+        Obstacle_4: false
+        Saved Trajectory: true
+        Start: true
+        StartHeading: true
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /nokov_markers
+      Name: MarkerArray
+      Namespaces:
+        arrow: true
+        vehicle: true
+      Queue Size: 100
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /pure_pursuit
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Default Light: true
+    Fixed Frame: world
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/MoveCamera
+    - Class: rviz/Interact
+      Hide Inactive Objects: true
+    - Class: rviz/SetInitialPose
+      Theta std deviation: 0.2617993950843811
+      Topic: /initialpose
+      X std deviation: 0.5
+      Y std deviation: 0.5
+    - Class: rviz/SetGoal
+      Topic: /move_base_simple/goal
+  Value: true
+  Views:
+    Current:
+      Angle: 0.0650005042552948
+      Class: rviz/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Scale: 754.5552978515625
+      Target Frame: <Fixed Frame>
+      X: 1.4033280611038208
+      Y: 0.8981970548629761
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1672
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd0000000100000000000001f7000005ecfc0200000002fb000000100044006900730070006c006100790073010000006e000003f50000018200fffffffb0000001e0054006f006f006c002000500072006f0070006500720074006900650073010000046f000001eb000000b000ffffff000008ad000005ec00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Tool Properties:
+    collapsed: false
+  Width: 2736
+  X: 144
+  Y: 54

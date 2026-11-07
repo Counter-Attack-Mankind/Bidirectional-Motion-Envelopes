@@ -1,0 +1,8 @@
+prefix=/home/libai/Code/condition_ws/devel
+
+Name: condition_planner
+Description: Description of condition_planner
+Version: 0.0.1
+Cflags: -I/home/libai/Code/condition_ws/src/condition_planner/.
+Libs: -L${prefix}/lib 
+Requires: roscpp roslib std_msgs geometry_msgs visualization_msgs nav_msgs tf sandbox_msgs

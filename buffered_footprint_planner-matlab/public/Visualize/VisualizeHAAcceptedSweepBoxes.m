@@ -1,0 +1,133 @@
+function VisualizeHAAcceptedSweepBoxes(step_plot)
+% 仅边框（学术蓝）+ 图例中 sweep box 显示为矩形
+
+global params
+
+if nargin < 1
+    step_plot = 3;
+end
+
+x     = params.ha.x(:);
+y     = params.ha.y(:);
+theta = params.ha.theta(:);
+v     = params.ha.v(:);
+phy   = params.ha.phy(:);
+ldt   = params.ha.local_dt(:);
+
+N = min([length(x), length(y), length(theta), length(v), length(phy), length(ldt)]);
+
+figure('Name','HA Accepted Sweep Boxes','Color','w');
+hold on; grid on; axis equal;
+xlabel('x'); ylabel('y');
+
+xlim([params.environment.xmin, params.environment.xmax]);
+ylim([params.environment.ymin, params.environment.ymax]);
+
+%% ===== 图例句柄 =====
+hObs   = gobjects(1,1);
+hPath  = gobjects(1,1);
+hSweepLegend = gobjects(1,1);
+hStart = gobjects(1,1);
+hGoal  = gobjects(1,1);
+
+%% ===== 障碍物 =====
+for ii = 1:params.environment.num_obs
+    htmp = fill(params.environment.obs(ii).x, ...
+                params.environment.obs(ii).y, ...
+                [0.75 0.75 0.75], ...
+                'EdgeColor', 'k', ...
+                'FaceAlpha', 0.4);
+
+    if ii == 1
+        hObs = htmp;
+    else
+        htmp.Annotation.LegendInformation.IconDisplayStyle = 'off';
+    end
+end
+
+%% ===== 路径 =====
+hPath = plot(x(1:N), y(1:N), 'k-', 'LineWidth', 1.5);
+
+%% ===== 统计变量 =====
+width_max  = -inf;
+width_min  = inf;
+height_max = -inf;
+height_min = inf;
+
+%% ===== Sweep Box（浅蓝色填充）=====
+edgeColor = [0.20 0.45 0.85];     % 学术蓝边框
+faceColor = [0.88 0.94 1.00];     % 浅蓝色填充
+
+for i = 1:step_plot:N
+
+    k = tan(phy(i)) / params.vehicle.lw;
+    step_len = v(i) * ldt(i);
+
+    [a, b, c, d] = EstimateScaledAABB(step_len, k);
+
+    width  = a + b;
+    height = c + d;
+
+    width_max  = max(width_max, width);
+    width_min  = min(width_min, width);
+    height_max = max(height_max, height);
+    height_min = min(height_min, height);
+
+    [AX, AY, BX, BY, CX, CY, DX, DY] = ddd2(x(i), y(i), theta(i), a, b, c, d);
+
+    for ii = 1:numel(AX)
+        htmp = fill([AX(ii) BX(ii) CX(ii) DX(ii)], ...
+                    [AY(ii) BY(ii) CY(ii) DY(ii)], ...
+                    faceColor, ...
+                    'EdgeColor', edgeColor, ...
+                    'LineWidth', 0.8, ...
+                    'FaceAlpha', 0.6);
+
+        htmp.Annotation.LegendInformation.IconDisplayStyle = 'off';
+    end
+end
+
+%% ===== 起终点 =====
+hStart = plot(x(1), y(1), 'go', 'MarkerSize', 10, 'MarkerFaceColor', 'g');
+hGoal  = plot(x(N), y(N), 'ro', 'MarkerSize', 10, 'MarkerFaceColor', 'r');
+
+%% ===== 图例中的矩形示例 =====
+x0 = -1;
+y0 = -1;
+w0 = 0.5;
+h0 = 0.3;
+
+hSweepLegend = patch( ...
+    [x0, x0+w0, x0+w0, x0], ...
+    [y0, y0,    y0+h0, y0+h0], ...
+    faceColor, ...
+    'EdgeColor', edgeColor, ...
+    'LineWidth', 1.0, ...
+    'FaceAlpha', 0.6);
+
+%% ===== 图例 =====
+legendHandles = [hObs, hSweepLegend, hPath, hStart, hGoal];
+legendTexts   = {'障碍物','膨胀车体','最终路径','起点','终点'};
+legend(legendHandles, legendTexts, 'Location','best');
+
+%% ===== 输出统计 =====
+fprintf('\n========== Sweep Box Size Statistics ==========\n');
+fprintf('Width  : min = %.4f , max = %.4f\n', width_min, width_max);
+fprintf('Height : min = %.4f , max = %.4f\n', height_min, height_max);
+fprintf('==============================================\n\n');
+
+end
+
+%% ============================================================
+function [a_s, b_s, c_s, d_s] = EstimateScaledAABB(step_len, k)
+
+[a, b, c, d] = EstimateAABB(step_len, k);
+
+eta = 1;
+
+a_s = eta * a;
+b_s = eta * b;
+c_s = eta * c;
+d_s = eta * d;
+
+end

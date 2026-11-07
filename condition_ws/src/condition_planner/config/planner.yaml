@@ -1,0 +1,53 @@
+# Vehicle Parameters (实车参数, 2026-04-08确认)
+rear_hang: 0.032
+front_hang: 0.036
+wheel_base: 0.143
+length: 0.211
+width: 0.191
+max_acceleration: 0.1
+max_deceleration: -0.1
+max_velocity: 0.25
+max_reverse_velocity: 0.0
+max_phi: 0.3491
+min_phi: -0.3491
+max_omega: 0.1
+
+# Collision detection
+vehicle_buffer: 0.0       # 精准碰撞检测
+vehicle_buffer_safe: 0.02 # 膨胀碰撞检测
+
+# Condition branch constraint
+# 当 |phi| > phi_threshold 时, v <= v_limit
+phi_threshold_ratio: 0.5   # |phi| > 50% * max_phi
+v_limit_ratio: 0.5         # v <= 50% * max_v
+
+# ECC input
+liom_csv_file: /home/yssun/Workspace/condition_ws/src/condition_planner/config/trajectory_v1.csv
+
+# DP S-V initial guess for ECC
+dp_sv_tf: 60.0
+dp_sv_num_s_nodes: 80
+dp_sv_num_v_nodes: 25
+dp_sv_w_nominal_velocity: 10.0
+dp_sv_w_acceleration: 1.0
+dp_sv_w_jerk: 10.0
+dp_sv_v_min: 0.0001
+dp_sv_cost_max: 100000000.0
+dp_sv_v_ratio: 0.9
+dp_sv_a_ratio: 1.0
+dp_sv_v_reduction_rate: 0.5
+dp_sv_dt_resolution: 0.001
+
+# NLP objective weights
+opti_a: 1.0
+opti_omega: 1.0
+opti_phi: 1.0
+opti_ref_x: 0.5
+opti_ref_y: 0.5
+opti_ref_theta: 0.1
+opti_ref_v: 1.0
+opti_smooth_a: 0.1
+opti_smooth_omega: 0.1
+
+# Scene
+env_file: env.json
