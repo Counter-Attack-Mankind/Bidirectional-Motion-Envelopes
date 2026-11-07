@@ -6,11 +6,11 @@ Panels:
 Visualization Manager:
   Class: ""
   Displays:
-    - Alpha: 0.5
+    - Alpha: 0.0
       Cell Size: 0.1
       Class: rviz/Grid
       Color: 100; 100; 100
-      Enabled: true
+      Enabled: false
       Line Style:
         Line Width: 0.03
         Value: Lines
@@ -23,7 +23,7 @@ Visualization Manager:
       Plane: XY
       Plane Cell Count: 40
       Reference Frame: map
-      Value: true
+      Value: false
     - Class: rviz/MarkerArray
       Enabled: true
       Marker Topic: /buffered_footprint_planner/markers
@@ -32,7 +32,7 @@ Visualization Manager:
       Value: true
   Enabled: true
   Global Options:
-    Background Color: 48; 48; 48
+    Background Color: 0; 0; 0
     Default Light: true
     Fixed Frame: map
     Frame Rate: 30
@@ -43,6 +43,8 @@ Visualization Manager:
     - Class: rviz/Select
     - Class: rviz/FocusCamera
     - Class: rviz/Measure
+    - Class: rviz/SetGoal
+      Topic: /move_base_simple/goal
   Value: true
   Views:
     Current:
@@ -50,10 +52,10 @@ Visualization Manager:
       Class: rviz/TopDownOrtho
       Name: Current View
       Near Clip Distance: 0.01
-      Scale: 300
+      Scale: 90
       Target Frame: <Fixed Frame>
-      X: 1.4
-      Y: 0.9
+      X: 2.25
+      Y: 1.25
     Saved: ~
 Window Geometry:
   Height: 900

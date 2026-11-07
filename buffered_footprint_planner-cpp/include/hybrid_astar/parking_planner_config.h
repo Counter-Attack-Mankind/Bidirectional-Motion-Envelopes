@@ -5,13 +5,13 @@ struct ParkingPlannerConfig {
   // 网格分辨率 (适配小场地2.8x1.8m和小车0.211m)
   double xy_grid_resolution = 0.05;
   double phi_grid_resolution = 0.1;
-  size_t next_node_num = 20;   // 10个前进转向角(更精细)
+  size_t next_node_num = 20;   // 前进、倒车各 10 个转向角
   double step_size = 0.03;    // 更细步长
 
   // 代价权重
   double traj_forward_penalty = 1.0;
-  double traj_back_penalty = 1e6;     // 极大值: 禁止后退
-  double traj_gear_switch_penalty = 1e6; // 极大值: 禁止换挡
+  double traj_back_penalty = 1.5;
+  double traj_gear_switch_penalty = 10.0;
   double traj_steer_penalty = 1.0;
   double traj_steer_change_penalty = 5.0;
 

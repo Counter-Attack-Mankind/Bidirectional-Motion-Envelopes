@@ -42,6 +42,7 @@ struct HybridAStartResult {
   std::vector<double> x;
   std::vector<double> y;
   std::vector<double> phi;
+  std::vector<bool> gear;
   std::vector<double> v;
   std::vector<double> a;
   std::vector<double> steer;

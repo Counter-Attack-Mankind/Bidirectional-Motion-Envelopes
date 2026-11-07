@@ -69,13 +69,6 @@ bool HybridAStar::AnalyticExpansion(const std::shared_ptr<Node3d>& current_node)
     return false;
   }
 
-  // NOTE: reject Reeds-Shepp paths that contain reverse segments (forward-only mode)
-  for (const auto& g : reeds_shepp_to_check->gear) {
-    if (!g) {  // gear false = reverse
-      return false;
-    }
-  }
-
   if (!RSPCheck(reeds_shepp_to_check)) {
     return false;
   }
@@ -115,55 +108,15 @@ bool HybridAStar::ValidityCheck(const std::shared_ptr<Node3d>& node) {
     check_start_index = 1;
   }
 
-  // for (size_t i = check_start_index; i < node_step_size; ++i) {
-  //   // CRITICAL FIX: Check full vehicle rectangle, not just discs
-  //   // Generate vehicle box at current configuration
-  //   common::math::Pose pose(traversed_x[i], traversed_y[i], traversed_phi[i]);
-  //   auto vehicle_box = vehicle_param_.GenerateBox(pose);
-
-  //   // Get all four corners of the vehicle rectangle
-  //   const auto& corners = vehicle_box.corners();
-
-  //   // Check if ALL corners are within bounds
-  //   for (const auto& corner : corners) {
-  //     if (corner.x() > XYbounds_[1] || corner.x() < XYbounds_[0] ||
-  //         corner.y() > XYbounds_[3] || corner.y() < XYbounds_[2]) {
-  //       printf("Vehicle corner out of bounds: pos=(%.2f, %.2f, %.2f°), corner=(%.2f, %.2f), bounds=[%.2f,%.2f] x [%.2f,%.2f]\n",
-  //              traversed_x[i], traversed_y[i], traversed_phi[i] * 180.0/M_PI,
-  //              corner.x(), corner.y(),
-  //              XYbounds_[0], XYbounds_[1], XYbounds_[2], XYbounds_[3]);
-  //       return false;
-  //     }
-  //   }
-
-  //   // Check obstacle collision using vehicle box
-  //   if (!obstacles_.empty()) {
-  //     // Convert vehicle box to polygon for collision checking
-  //     common::math::Polygon2d vehicle_polygon(vehicle_box);
-
-  //     for(const auto &obstacle : obstacles_) {
-  //       if (vehicle_polygon.HasOverlap(obstacle)) {
-  //         // Uncomment for debug
-  //         // printf("Vehicle collision at (%.2f, %.2f, %.2f°)\n",
-  //         //        traversed_x[i], traversed_y[i], traversed_phi[i] * 180.0/M_PI);
-  //         return false;
-  //       }
-  //     }
-  //   }
-  // }
   for (size_t i = check_start_index; i < node_step_size; ++i) {
-    if (traversed_x[i] > XYbounds_[1] || traversed_x[i] < XYbounds_[0] ||
-        traversed_y[i] > XYbounds_[3] || traversed_y[i] < XYbounds_[2]) {
-      return false;
-    }
-
-    if (obstacles_.empty()) {
-      continue;
-    }
-
-    // 精确矩形碰撞检测(替代保守的碟形检测)
     common::math::Pose pose(traversed_x[i], traversed_y[i], traversed_phi[i]);
     auto vehicle_box = vehicle_param_.GenerateBox(pose);
+    for (const auto& corner : vehicle_box.corners()) {
+      if (corner.x() > XYbounds_[1] || corner.x() < XYbounds_[0] ||
+          corner.y() > XYbounds_[3] || corner.y() < XYbounds_[2]) {
+        return false;
+      }
+    }
     common::math::Polygon2d vehicle_polygon(vehicle_box);
     for (const auto &ob : obstacles_) {
       if (vehicle_polygon.HasOverlap(ob)) {
@@ -180,6 +133,9 @@ std::shared_ptr<Node3d> HybridAStar::LoadRSPinCS(
   std::shared_ptr<Node3d> end_node = std::make_shared<Node3d>(
       reeds_shepp_to_end->x, reeds_shepp_to_end->y, reeds_shepp_to_end->phi,
       XYbounds_, planner_open_space_config_);
+  if (!reeds_shepp_to_end->gear.empty()) {
+    end_node->SetDirec(reeds_shepp_to_end->gear.back());
+  }
   end_node->SetPre(std::move(current_node));
   close_set_.emplace(end_node->GetIndex(), end_node);
   return end_node;
@@ -228,26 +184,6 @@ std::shared_ptr<Node3d> HybridAStar::Next_node_generator(
     last_y = next_y;
     last_phi = next_phi;
   }
-  // check if the vehicle runs outside of XY boundary
-  // CRITICAL FIX: Check full vehicle rectangle for ALL intermediate points
-  for (size_t i = 0; i < intermediate_x.size(); ++i) {
-    // Generate vehicle box at current configuration
-    common::math::Pose pose(intermediate_x[i], intermediate_y[i], intermediate_phi[i]);
-    auto vehicle_box = vehicle_param_.GenerateBox(pose);
-
-    // Get all four corners of the vehicle rectangle
-    const auto& corners = vehicle_box.corners();
-
-    // Check if ALL corners are within bounds
-    for (const auto& corner : corners) {
-      if (corner.x() > XYbounds_[1] || corner.x() < XYbounds_[0] ||
-          corner.y() > XYbounds_[3] || corner.y() < XYbounds_[2]) {
-        // Vehicle rectangle goes out of bounds - reject this node
-        return nullptr;
-      }
-    }
-  }
-
   std::shared_ptr<Node3d> next_node = std::make_shared<Node3d>(
       intermediate_x, intermediate_y, intermediate_phi, XYbounds_,
                  planner_open_space_config_);
@@ -329,6 +265,18 @@ bool HybridAStar::GetResult(HybridAStartResult* result) {
   (*result).x = hybrid_a_x;
   (*result).y = hybrid_a_y;
   (*result).phi = hybrid_a_phi;
+  result->gear.clear();
+  result->gear.reserve(result->x.size());
+  for (size_t i = 0; i + 1 < result->x.size(); ++i) {
+    const double dx = result->x[i + 1] - result->x[i];
+    const double dy = result->y[i + 1] - result->y[i];
+    const double projection = dx * std::cos(result->phi[i]) +
+                              dy * std::sin(result->phi[i]);
+    result->gear.push_back(std::abs(projection) < 1e-9 && !result->gear.empty()
+                               ? result->gear.back()
+                               : projection >= 0.0);
+  }
+  result->gear.push_back(result->gear.empty() ? true : result->gear.back());
 
   if (!GetTemporalProfile(result)) {
     printf("GetSpeedProfile from Hybrid Astar path fails");
@@ -359,18 +307,18 @@ bool HybridAStar::GenerateSpeedAcceleration(HybridAStartResult* result) {
 
   // load velocity from position
   // initial and end speed are set to be zeros
+  if (result->gear.size() != x_size) {
+    return false;
+  }
+  result->v.clear();
+  result->a.clear();
+  result->steer.clear();
   result->v.push_back(0.0);
   for (size_t i = 1; i + 1 < x_size; ++i) {
-    double discrete_v = (((result->x[i + 1] - result->x[i]) / delta_t_) *
-                         std::cos(result->phi[i]) +
-                         ((result->x[i] - result->x[i - 1]) / delta_t_) *
-                         std::cos(result->phi[i])) /
-                        2.0 +
-                        (((result->y[i + 1] - result->y[i]) / delta_t_) *
-                         std::sin(result->phi[i]) +
-                         ((result->y[i] - result->y[i - 1]) / delta_t_) *
-                         std::sin(result->phi[i])) /
-                        2.0;
+    const double distance = std::hypot(result->x[i + 1] - result->x[i - 1],
+                                       result->y[i + 1] - result->y[i - 1]);
+    const double discrete_v = (result->gear[i] ? 1.0 : -1.0) *
+                              distance / (2.0 * delta_t_);
     result->v.push_back(discrete_v);
   }
   result->v.push_back(0.0);
@@ -383,9 +331,10 @@ bool HybridAStar::GenerateSpeedAcceleration(HybridAStartResult* result) {
 
   // load steering from phi
   for (size_t i = 0; i + 1 < x_size; ++i) {
-    double discrete_steer = (result->phi[i + 1] - result->phi[i]) *
+    double discrete_steer = common::math::NormalizeAngle(
+                                result->phi[i + 1] - result->phi[i]) *
                             vehicle_param_.wheel_base / step_size_;
-    if (result->v[i] > 0.0) {
+    if (result->gear[i]) {
       discrete_steer = std::atan(discrete_steer);
     } else {
       discrete_steer = std::atan(-discrete_steer);
@@ -401,7 +350,8 @@ bool HybridAStar::TrajectoryPartition(
   const auto& x = result.x;
   const auto& y = result.y;
   const auto& phi = result.phi;
-  if (x.size() != y.size() || x.size() != phi.size()) {
+  if (x.size() < 2 || x.size() != y.size() || x.size() != phi.size() ||
+      x.size() != result.gear.size()) {
     printf("states sizes are not equal when do trajectory partitioning of Hybrid A Star result");
     return false;
   }
@@ -410,34 +360,27 @@ bool HybridAStar::TrajectoryPartition(
   partitioned_result->clear();
   partitioned_result->emplace_back();
   auto* current_traj = &(partitioned_result->back());
-  double heading_angle = phi.front();
-  const Vec2d init_tracking_vector(x[1] - x[0], y[1] - y[0]);
-  double tracking_angle = init_tracking_vector.Angle();
-  bool current_gear =
-      std::abs(common::math::NormalizeAngle(tracking_angle - heading_angle)) <
-      (M_PI_2);
+  bool current_gear = result.gear.front();
+  current_traj->x.push_back(x.front());
+  current_traj->y.push_back(y.front());
+  current_traj->phi.push_back(phi.front());
+  current_traj->gear.push_back(current_gear);
   for (size_t i = 0; i < horizon - 1; ++i) {
-    heading_angle = phi[i];
-    const Vec2d tracking_vector(x[i + 1] - x[i], y[i + 1] - y[i]);
-    tracking_angle = tracking_vector.Angle();
-    bool gear =
-        std::abs(common::math::NormalizeAngle(tracking_angle - heading_angle)) <
-        (M_PI_2);
+    const bool gear = result.gear[i];
     if (gear != current_gear) {
-      current_traj->x.push_back(x[i]);
-      current_traj->y.push_back(y[i]);
-      current_traj->phi.push_back(phi[i]);
       partitioned_result->emplace_back();
       current_traj = &(partitioned_result->back());
       current_gear = gear;
+      current_traj->x.push_back(x[i]);
+      current_traj->y.push_back(y[i]);
+      current_traj->phi.push_back(phi[i]);
+      current_traj->gear.push_back(gear);
     }
-    current_traj->x.push_back(x[i]);
-    current_traj->y.push_back(y[i]);
-    current_traj->phi.push_back(phi[i]);
+    current_traj->x.push_back(x[i + 1]);
+    current_traj->y.push_back(y[i + 1]);
+    current_traj->phi.push_back(phi[i + 1]);
+    current_traj->gear.push_back(gear);
   }
-  current_traj->x.push_back(x.back());
-  current_traj->y.push_back(y.back());
-  current_traj->phi.push_back(phi.back());
 
 
   // Retrieve v, a and steer from path
@@ -464,6 +407,8 @@ bool HybridAStar::GetTemporalProfile(HybridAStartResult* result) {
               std::back_inserter(stitched_result.y));
     std::copy(result.phi.begin(), result.phi.end() - 1,
               std::back_inserter(stitched_result.phi));
+    std::copy(result.gear.begin(), result.gear.end() - 1,
+              std::back_inserter(stitched_result.gear));
     std::copy(result.v.begin(), result.v.end() - 1,
               std::back_inserter(stitched_result.v));
     std::copy(result.a.begin(), result.a.end(),
@@ -474,7 +419,16 @@ bool HybridAStar::GetTemporalProfile(HybridAStartResult* result) {
   stitched_result.x.push_back(partitioned_results.back().x.back());
   stitched_result.y.push_back(partitioned_results.back().y.back());
   stitched_result.phi.push_back(partitioned_results.back().phi.back());
+  stitched_result.gear.push_back(partitioned_results.back().gear.back());
   stitched_result.v.push_back(partitioned_results.back().v.back());
+  stitched_result.accumulated_s.reserve(stitched_result.x.size());
+  stitched_result.accumulated_s.push_back(0.0);
+  for (size_t i = 1; i < stitched_result.x.size(); ++i) {
+    stitched_result.accumulated_s.push_back(
+        stitched_result.accumulated_s.back() +
+        std::hypot(stitched_result.x[i] - stitched_result.x[i - 1],
+                   stitched_result.y[i] - stitched_result.y[i - 1]));
+  }
   *result = stitched_result;
   return true;
 }
@@ -552,8 +506,7 @@ bool HybridAStar::Plan(
       break;
     }
     close_set_.emplace(current_node->GetIndex(), current_node);
-    // NOTE: only generate forward nodes (i < next_node_num_/2), skip reverse
-    for (size_t i = 0; i < next_node_num_ / 2; ++i) {
+    for (size_t i = 0; i < next_node_num_; ++i) {
       std::shared_ptr<Node3d> next_node = Next_node_generator(current_node, i);
       // boundary check failure handle
       if (next_node == nullptr) {

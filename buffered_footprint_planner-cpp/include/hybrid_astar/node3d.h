@@ -65,13 +65,17 @@ public:
   const std::vector<double>& GetYs() const { return traversed_y_; }
   const std::vector<double>& GetPhis() const { return traversed_phi_; }
   void SetPre(std::shared_ptr<Node3d> pre_node) { pre_node_ = std::move(pre_node); }
-  void SetDirec(bool direction) { direction_ = direction; }
+  void SetDirec(bool direction) {
+    direction_ = direction;
+    index_ = ComputeStringIndex(x_grid_, y_grid_, phi_grid_, direction_);
+  }
   void SetTrajCost(double cost) { traj_cost_ = cost; }
   void SetHeuCost(double cost) { heuristic_cost_ = cost; }
   void SetSteer(double steering) { steering_ = steering; }
 
 private:
-  static int64_t ComputeStringIndex(int x_grid, int y_grid, int phi_grid);
+  static int64_t ComputeStringIndex(int x_grid, int y_grid, int phi_grid,
+                                    bool direction);
 
 private:
   double x_ = 0.0;

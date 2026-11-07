@@ -65,6 +65,7 @@ void VisualizationPlot::Plot(const VisualizationPlot::Vector &xs, const Visualiz
     geometry_msgs::Point pt;
     pt.x = xs[i];
     pt.y = ys[i];
+    pt.z = 0.03;
     msg.points.push_back(pt);
     msg.colors.push_back(color[i].toColorRGBA());
   }
@@ -95,7 +96,7 @@ void VisualizationPlot::PlotPolygon(const Polygon2d &polygon, double width, Colo
 }
 
 void VisualizationPlot::PlotFilledPolygon(const Vector &xs, const Vector &ys, Color color, int id,
-                                          const std::string &ns) {
+                                          const std::string &ns, double z) {
   if (xs.size() < 3) return;  // Need at least 3 points for a polygon
 
   visualization_msgs::Marker msg;
@@ -116,15 +117,15 @@ void VisualizationPlot::PlotFilledPolygon(const Vector &xs, const Vector &ys, Co
     geometry_msgs::Point pt0, pt1, pt2;
     pt0.x = xs[0];
     pt0.y = ys[0];
-    pt0.z = 0.01;
+    pt0.z = z;
 
     pt1.x = xs[i];
     pt1.y = ys[i];
-    pt1.z = 0.01;
+    pt1.z = z;
 
     pt2.x = xs[i + 1];
     pt2.y = ys[i + 1];
-    pt2.z = 0.01;
+    pt2.z = z;
 
     msg.points.push_back(pt0);
     msg.points.push_back(pt1);
@@ -137,13 +138,13 @@ void VisualizationPlot::PlotFilledPolygon(const Vector &xs, const Vector &ys, Co
 }
 
 void VisualizationPlot::PlotFilledPolygon(const Polygon2d &polygon, Color color, int id,
-                                          const std::string &ns) {
+                                          const std::string &ns, double z) {
   std::vector<double> xs, ys;
   for (auto &pt: polygon.points()) {
     xs.push_back(pt.x());
     ys.push_back(pt.y());
   }
-  PlotFilledPolygon(xs, ys, color, id, ns);
+  PlotFilledPolygon(xs, ys, color, id, ns, z);
 }
 
 void VisualizationPlot::PlotPath(const Vector &xs, const Vector &ys, const Vector &thetas, double bias, double width, int id,
@@ -173,7 +174,7 @@ void VisualizationPlot::PlotTrajectory(const Vector &xs, const Vector &ys, const
 }
 
 void VisualizationPlot::PlotPoints(const Vector &xs, const Vector &ys, const Color &color, double width, int id,
-                                   const std::string &ns) {
+                                   const std::string &ns, double z) {
   assert(xs.size() == ys.size());
 
   visualization_msgs::Marker msg;
@@ -192,12 +193,68 @@ void VisualizationPlot::PlotPoints(const Vector &xs, const Vector &ys, const Col
     geometry_msgs::Point pt;
     pt.x = xs[i];
     pt.y = ys[i];
+    pt.z = z;
     msg.points.push_back(pt);
   }
 
   mutex_.lock();
   arr_.markers.push_back(msg);
   mutex_.unlock();
+}
+
+void VisualizationPlot::PlotArrow(double start_x, double start_y,
+                                  double end_x, double end_y, Color color,
+                                  int id, const std::string &ns,
+                                  double shaft_diameter,
+                                  double head_diameter, double head_length,
+                                  double z) {
+  visualization_msgs::Marker msg;
+  msg.header.frame_id = frame_;
+  msg.header.stamp = ros::Time();
+  msg.ns = ns;
+  msg.id = id >= 0 ? id : arr_.markers.size();
+  msg.action = visualization_msgs::Marker::ADD;
+  msg.type = visualization_msgs::Marker::ARROW;
+  msg.pose.orientation.w = 1.0;
+  msg.scale.x = shaft_diameter;
+  msg.scale.y = head_diameter;
+  msg.scale.z = head_length;
+  msg.color = color.toColorRGBA();
+
+  geometry_msgs::Point start;
+  start.x = start_x;
+  start.y = start_y;
+  start.z = z;
+  geometry_msgs::Point end;
+  end.x = end_x;
+  end.y = end_y;
+  end.z = z;
+  msg.points = {start, end};
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  arr_.markers.push_back(msg);
+}
+
+void VisualizationPlot::PlotText(double x, double y, const std::string &text,
+                                 double height, Color color, int id,
+                                 const std::string &ns) {
+  visualization_msgs::Marker msg;
+  msg.header.frame_id = frame_;
+  msg.header.stamp = ros::Time();
+  msg.ns = ns;
+  msg.id = id >= 0 ? id : arr_.markers.size();
+  msg.action = visualization_msgs::Marker::ADD;
+  msg.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+  msg.pose.position.x = x;
+  msg.pose.position.y = y;
+  msg.pose.position.z = 0.06;
+  msg.pose.orientation.w = 1.0;
+  msg.scale.z = height;
+  msg.color = color.toColorRGBA();
+  msg.text = text;
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  arr_.markers.push_back(msg);
 }
 
 void VisualizationPlot::PlotVehicleFootprints(const Vector &xs, const Vector &ys, const Vector &thetas,
@@ -258,7 +315,6 @@ void VisualizationPlot::Trigger() {
   mutex_.lock();
   publisher_.publish(arr_);
   arr_.markers.clear();
-  ros::spinOnce();
   mutex_.unlock();
 }
 

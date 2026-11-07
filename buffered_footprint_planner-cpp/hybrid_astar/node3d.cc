@@ -53,7 +53,7 @@ Node3d::Node3d(double x, double y, double phi,
   traversed_y_.push_back(y);
   traversed_phi_.push_back(phi);
 
-  index_ = ComputeStringIndex(x_grid_, y_grid_, phi_grid_);
+  index_ = ComputeStringIndex(x_grid_, y_grid_, phi_grid_, direction_);
 }
 
 Node3d::Node3d(const std::vector<double> &traversed_x,
@@ -83,7 +83,7 @@ Node3d::Node3d(const std::vector<double> &traversed_x,
   traversed_y_ = traversed_y;
   traversed_phi_ = traversed_phi;
 
-  index_ = ComputeStringIndex(x_grid_, y_grid_, phi_grid_);
+  index_ = ComputeStringIndex(x_grid_, y_grid_, phi_grid_, direction_);
   step_size_ = traversed_x.size();
 }
 
@@ -103,9 +103,12 @@ bool Node3d::operator==(const Node3d &right) const {
   return right.GetIndex() == index_;
 }
 
-int64_t Node3d::ComputeStringIndex(int x_grid, int y_grid, int phi_grid) {
+int64_t Node3d::ComputeStringIndex(int x_grid, int y_grid, int phi_grid,
+                                  bool direction) {
   // WARNING: may lost high 12 bits, it's fine in little-endian world when less than 2^20(1048576)
-  return ((int64_t) x_grid << 40) | ((int64_t) y_grid << 20) | phi_grid;
+  const int64_t pose_index =
+      ((int64_t) x_grid << 40) | ((int64_t) y_grid << 20) | phi_grid;
+  return (pose_index << 1) | (direction ? 1 : 0);
 }
 
 }  // namespace planning
