@@ -1,9 +1,9 @@
-min_dt: 0.02
-max_dt: 0.25
+min_dt: 0.0001
+max_dt: 0.0500
 temporal_tightening_eta: 0.90
 dmin: 0.005
 total_time_limit: 35.0
-ipopt_max_iterations: 500
-ipopt_max_cpu_time: 60.0
-ipopt_tolerance: 1.0e-5
-ipopt_linear_solver: mumps
+ipopt_max_iterations: 399984
+ipopt_max_cpu_time: 20.0
+ipopt_tolerance: 1.0e-3
+ipopt_linear_solver: ma27

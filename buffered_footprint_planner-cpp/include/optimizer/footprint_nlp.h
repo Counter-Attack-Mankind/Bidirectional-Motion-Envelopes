@@ -11,14 +11,14 @@
 namespace optimizer {
 
 struct FootprintNlpConfig {
-  double min_dt = 0.02;
-  double max_dt = 0.25;
+  double min_dt = 0.0001;
+  double max_dt = 0.0500;
   double total_time_limit = 35.0;
   double dmin = 0.005;
-  double tolerance = 1e-5;
-  int max_iterations = 500;
-  double max_cpu_time = 60.0;
-  std::string linear_solver = "mumps";
+  double tolerance = 1e-3;
+  int max_iterations = 399984;
+  double max_cpu_time = 20.0;
+  std::string linear_solver = "ma27";
 };
 
 OptimizationResult SolveFootprintNlp(

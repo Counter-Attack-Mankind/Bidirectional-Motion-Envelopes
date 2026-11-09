@@ -15,7 +15,7 @@ struct VehicleParameter {
   double v_max = 0.25;
   double a_max = 0.1;
   double delta_max = 0.3491;
-  double omega_max = 0.1;
+  double omega_max = 0.30;
 
   double steer_ratio = 1.0;
 

@@ -190,7 +190,7 @@ OptimizationResult SolveFootprintNlp(
   result.configured_max_cpu_time = config.max_cpu_time;
   result.configured_tolerance = config.tolerance;
   result.configured_linear_solver = config.linear_solver;
-  result.configured_hessian_approximation = "limited-memory";
+  result.configured_hessian_approximation = "exact";
   result.configured_mu_strategy = "adaptive";
   if (initial.nodes.size() < 2 ||
       initial.intervals.size() + 1 != initial.nodes.size()) {
@@ -215,14 +215,11 @@ OptimizationResult SolveFootprintNlp(
   const std::size_t obstacle_count = obstacles.size();
   const std::size_t obca_column_count = interval_count * obstacle_count;
   result.model_obstacle_count = obstacle_count;
-  result.model_obca_variable_count = 8 * obca_column_count;
-  result.model_variable_count = 7 * node_count + interval_count +
+  result.model_obca_variable_count = 10 * obca_column_count;
+  result.model_variable_count = 7 * node_count + 1 + 17 * interval_count +
                                 result.model_obca_variable_count;
-  result.model_constraint_count =
-      2 * interval_count + 1 + 8 * obca_column_count + 14 +
-      8 * node_count + 5 * interval_count + interval_count +
-      5 * interval_count + 16 * interval_count +
-      4 * obca_column_count;
+  result.model_constraint_count = 44 * interval_count + 17 + 8 * node_count +
+                                  14 * obca_column_count;
   const double front = vehicle.wheel_base + vehicle.front_hang;
   const double rear = vehicle.rear_hang;
   const double half_width = vehicle.width / 2.0;
@@ -231,18 +228,41 @@ OptimizationResult SolveFootprintNlp(
   casadi::Opti opti;
   MX state = opti.variable(7, node_count);
   MX dt = opti.variable(interval_count);
+  MX tf = opti.variable();
+  MX k = opti.variable(interval_count);
+  MX s = opti.variable(interval_count);
+  MX splus = opti.variable(interval_count);
+  MX sminus = opti.variable(interval_count);
+  MX up = opti.variable(interval_count);
+  MX down = opti.variable(interval_count);
+  MX left = opti.variable(interval_count);
+  MX right = opti.variable(interval_count);
+  MX AX = opti.variable(interval_count);
+  MX AY = opti.variable(interval_count);
+  MX BX = opti.variable(interval_count);
+  MX BY = opti.variable(interval_count);
+  MX CX = opti.variable(interval_count);
+  MX CY = opti.variable(interval_count);
+  MX DX = opti.variable(interval_count);
+  MX DY = opti.variable(interval_count);
   MX lambda;
   MX mu;
+  MX obca_qx;
+  MX obca_qy;
   if (obstacle_count > 0) {
     lambda = opti.variable(4, obca_column_count);
     mu = opti.variable(4, obca_column_count);
+    obca_qx = opti.variable(obca_column_count);
+    obca_qy = opti.variable(obca_column_count);
   }
 
   for (std::size_t i = 0; i < interval_count; ++i) {
     opti.subject_to(dt(i) >= config.min_dt);
     opti.subject_to(dt(i) <= config.max_dt);
   }
-  opti.subject_to(MX::sum1(dt) <= config.total_time_limit);
+  opti.subject_to(tf >= 0.0);
+  opti.subject_to(tf == MX::sum1(dt));
+  opti.subject_to(tf <= config.total_time_limit);
   for (std::size_t column = 0; column < obca_column_count; ++column) {
     for (std::size_t edge = 0; edge < 4; ++edge) {
       opti.subject_to(lambda(edge, column) >= 0.0);
@@ -296,50 +316,56 @@ OptimizationResult SolveFootprintNlp(
                     theta + interval_dt * v * tan(phy) / vehicle.wheel_base);
     opti.subject_to(state(5, i + 1) == phy + interval_dt * w);
 
-    if (i > 0 && initial.intervals[i - 1].gear != initial.intervals[i].gear) {
-      opti.subject_to(v == 0.0);
-    } else if (initial.intervals[i].gear) {
-      opti.subject_to(v >= 0.0);
-    } else {
-      opti.subject_to(v <= 0.0);
-    }
+    const MX abs_k = fabs(k(i));
+    opti.subject_to(k(i) == tan(phy) / vehicle.wheel_base);
+    opti.subject_to(s(i) == v * interval_dt);
+    opti.subject_to(splus(i) == fmax(s(i), 0.0));
+    opti.subject_to(sminus(i) == fmax(-s(i), 0.0));
+    opti.subject_to(up(i) == splus(i) + half_width * abs_k * splus(i));
+    opti.subject_to(down(i) == sminus(i) + half_width * abs_k * sminus(i));
+    opti.subject_to(
+        left(i) ==
+        fmax(-rear * k(i) * splus(i),
+             (front + 0.5 * splus(i)) * k(i) * splus(i)) +
+        fmax(-front * k(i) * sminus(i),
+             (rear + 0.5 * sminus(i)) * k(i) * sminus(i)));
+    opti.subject_to(
+        right(i) ==
+        fmax(rear * k(i) * splus(i),
+             -(front + 0.5 * splus(i)) * k(i) * splus(i)) +
+        fmax(front * k(i) * sminus(i),
+             -(rear + 0.5 * sminus(i)) * k(i) * sminus(i)));
 
-    const MX k = tan(phy) / vehicle.wheel_base;
-    const MX abs_k = fabs(k);
-    const MX signed_distance = v * interval_dt;
-    const MX splus = fmax(signed_distance, 0.0);
-    const MX sminus = fmax(-signed_distance, 0.0);
-    const MX up = splus + half_width * abs_k * splus;
-    const MX down = sminus + half_width * abs_k * sminus;
-    const MX left =
-        fmax(-rear * k * splus, (front + 0.5 * splus) * k * splus) +
-        fmax(-front * k * sminus, (rear + 0.5 * sminus) * k * sminus);
-    const MX right =
-        fmax(rear * k * splus, -(front + 0.5 * splus) * k * splus) +
-        fmax(front * k * sminus, -(rear + 0.5 * sminus) * k * sminus);
-
-    opti.subject_to(abs_k * (splus + sminus) <= M_PI_2);
-    opti.subject_to((1.0 + half_width * abs_k) * tan(abs_k * splus) <=
+    opti.subject_to(abs_k * (splus(i) + sminus(i)) <= M_PI_2);
+    opti.subject_to((1.0 + half_width * abs_k) * tan(abs_k * splus(i)) <=
                     rear * abs_k);
-    opti.subject_to(abs_k * front * tan(abs_k * splus) <=
+    opti.subject_to(abs_k * front * tan(abs_k * splus(i)) <=
                     1.0 + half_width * abs_k);
-    opti.subject_to((1.0 + half_width * abs_k) * tan(abs_k * sminus) <=
+    opti.subject_to((1.0 + half_width * abs_k) * tan(abs_k * sminus(i)) <=
                     front * abs_k);
-    opti.subject_to(abs_k * rear * tan(abs_k * sminus) <=
+    opti.subject_to(abs_k * rear * tan(abs_k * sminus(i)) <=
                     1.0 + half_width * abs_k);
 
     const MX c = cos(theta);
     const MX sn = sin(theta);
-    std::array<MX, 4> corner_x{
-        x + (front + up) * c - (half_width + left) * sn,
-        x + (front + up) * c + (half_width + right) * sn,
-        x - (rear + down) * c + (half_width + right) * sn,
-        x - (rear + down) * c - (half_width + left) * sn};
-    std::array<MX, 4> corner_y{
-        y + (front + up) * sn + (half_width + left) * c,
-        y + (front + up) * sn - (half_width + right) * c,
-        y - (rear + down) * sn - (half_width + right) * c,
-        y - (rear + down) * sn + (half_width + left) * c};
+    opti.subject_to(AX(i) == x + (front + up(i)) * c -
+                                     (half_width + left(i)) * sn);
+    opti.subject_to(BX(i) == x + (front + up(i)) * c +
+                                     (half_width + right(i)) * sn);
+    opti.subject_to(CX(i) == x - (rear + down(i)) * c +
+                                     (half_width + right(i)) * sn);
+    opti.subject_to(DX(i) == x - (rear + down(i)) * c -
+                                     (half_width + left(i)) * sn);
+    opti.subject_to(AY(i) == y + (front + up(i)) * sn +
+                                     (half_width + left(i)) * c);
+    opti.subject_to(BY(i) == y + (front + up(i)) * sn -
+                                     (half_width + right(i)) * c);
+    opti.subject_to(CY(i) == y - (rear + down(i)) * sn -
+                                     (half_width + right(i)) * c);
+    opti.subject_to(DY(i) == y - (rear + down(i)) * sn +
+                                     (half_width + left(i)) * c);
+    std::array<MX, 4> corner_x{AX(i), BX(i), CX(i), DX(i)};
+    std::array<MX, 4> corner_y{AY(i), BY(i), CY(i), DY(i)};
     for (std::size_t corner = 0; corner < 4; ++corner) {
       opti.subject_to(corner_x[corner] >= bounds[0]);
       opti.subject_to(corner_x[corner] <= bounds[1]);
@@ -349,25 +375,32 @@ OptimizationResult SolveFootprintNlp(
 
     for (std::size_t obstacle = 0; obstacle < obstacle_count; ++obstacle) {
       const std::size_t column = i * obstacle_count + obstacle;
-      MX qx = 0.0;
-      MX qy = 0.0;
+      MX qx_definition = 0.0;
+      MX qy_definition = 0.0;
       MX certificate = 0.0;
       for (std::size_t edge = 0; edge < 4; ++edge) {
-        qx += halfspaces[obstacle].a[edge][0] * lambda(edge, column);
-        qy += halfspaces[obstacle].a[edge][1] * lambda(edge, column);
+        qx_definition +=
+            halfspaces[obstacle].a[edge][0] * lambda(edge, column);
+        qy_definition +=
+            halfspaces[obstacle].a[edge][1] * lambda(edge, column);
         certificate +=
             (halfspaces[obstacle].a[edge][0] * x +
              halfspaces[obstacle].a[edge][1] * y -
              halfspaces[obstacle].b[edge]) * lambda(edge, column);
       }
-      certificate -= (front + up) * mu(0, column) +
-                     (rear + down) * mu(1, column) +
-                     (half_width + left) * mu(2, column) +
-                     (half_width + right) * mu(3, column);
+      opti.subject_to(obca_qx(column) == qx_definition);
+      opti.subject_to(obca_qy(column) == qy_definition);
+      certificate -= (front + up(i)) * mu(0, column) +
+                     (rear + down(i)) * mu(1, column) +
+                     (half_width + left(i)) * mu(2, column) +
+                     (half_width + right(i)) * mu(3, column);
       opti.subject_to(certificate >= config.dmin);
-      opti.subject_to(mu(0, column) - mu(1, column) + c * qx + sn * qy == 0.0);
-      opti.subject_to(mu(2, column) - mu(3, column) - sn * qx + c * qy == 0.0);
-      opti.subject_to(qx * qx + qy * qy <= 1.0);
+      opti.subject_to(mu(0, column) - mu(1, column) +
+                      c * obca_qx(column) + sn * obca_qy(column) == 0.0);
+      opti.subject_to(mu(2, column) - mu(3, column) -
+                      sn * obca_qx(column) + c * obca_qy(column) == 0.0);
+      opti.subject_to(obca_qx(column) * obca_qx(column) +
+                      obca_qy(column) * obca_qy(column) <= 1.0);
     }
   }
 
@@ -385,12 +418,100 @@ OptimizationResult SolveFootprintNlp(
   }
   opti.set_initial(state, state_initial);
   opti.set_initial(dt, dt_initial);
+  DM k_initial = DM::zeros(interval_count);
+  DM s_initial = DM::zeros(interval_count);
+  DM splus_initial = DM::zeros(interval_count);
+  DM sminus_initial = DM::zeros(interval_count);
+  DM up_initial = DM::zeros(interval_count);
+  DM down_initial = DM::zeros(interval_count);
+  DM left_initial = DM::zeros(interval_count);
+  DM right_initial = DM::zeros(interval_count);
+  DM AX_initial = DM::zeros(interval_count);
+  DM AY_initial = DM::zeros(interval_count);
+  DM BX_initial = DM::zeros(interval_count);
+  DM BY_initial = DM::zeros(interval_count);
+  DM CX_initial = DM::zeros(interval_count);
+  DM CY_initial = DM::zeros(interval_count);
+  DM DX_initial = DM::zeros(interval_count);
+  DM DY_initial = DM::zeros(interval_count);
+  double tf_initial = 0.0;
+  for (std::size_t i = 0; i < interval_count; ++i) {
+    const auto& node = initial.nodes[i];
+    const double interval_dt = initial.intervals[i].dt;
+    const double initial_k = std::tan(node.phy) / vehicle.wheel_base;
+    const double abs_k = std::abs(initial_k);
+    const double initial_s = node.v * interval_dt;
+    const double initial_splus = std::max(initial_s, 0.0);
+    const double initial_sminus = std::max(-initial_s, 0.0);
+    const double initial_up =
+        initial_splus + half_width * abs_k * initial_splus;
+    const double initial_down =
+        initial_sminus + half_width * abs_k * initial_sminus;
+    const double initial_left =
+        std::max(-rear * initial_k * initial_splus,
+                 (front + 0.5 * initial_splus) * initial_k * initial_splus) +
+        std::max(-front * initial_k * initial_sminus,
+                 (rear + 0.5 * initial_sminus) * initial_k * initial_sminus);
+    const double initial_right =
+        std::max(rear * initial_k * initial_splus,
+                 -(front + 0.5 * initial_splus) * initial_k * initial_splus) +
+        std::max(front * initial_k * initial_sminus,
+                 -(rear + 0.5 * initial_sminus) * initial_k * initial_sminus);
+    const double c = std::cos(node.theta);
+    const double sn = std::sin(node.theta);
+    k_initial(i) = initial_k;
+    s_initial(i) = initial_s;
+    splus_initial(i) = initial_splus;
+    sminus_initial(i) = initial_sminus;
+    up_initial(i) = initial_up;
+    down_initial(i) = initial_down;
+    left_initial(i) = initial_left;
+    right_initial(i) = initial_right;
+    AX_initial(i) = node.x + (front + initial_up) * c -
+                    (half_width + initial_left) * sn;
+    BX_initial(i) = node.x + (front + initial_up) * c +
+                    (half_width + initial_right) * sn;
+    CX_initial(i) = node.x - (rear + initial_down) * c +
+                    (half_width + initial_right) * sn;
+    DX_initial(i) = node.x - (rear + initial_down) * c -
+                    (half_width + initial_left) * sn;
+    AY_initial(i) = node.y + (front + initial_up) * sn +
+                    (half_width + initial_left) * c;
+    BY_initial(i) = node.y + (front + initial_up) * sn -
+                    (half_width + initial_right) * c;
+    CY_initial(i) = node.y - (rear + initial_down) * sn -
+                    (half_width + initial_right) * c;
+    DY_initial(i) = node.y - (rear + initial_down) * sn +
+                    (half_width + initial_left) * c;
+    tf_initial += interval_dt;
+  }
+  opti.set_initial(tf, tf_initial);
+  opti.set_initial(k, k_initial);
+  opti.set_initial(s, s_initial);
+  opti.set_initial(splus, splus_initial);
+  opti.set_initial(sminus, sminus_initial);
+  opti.set_initial(up, up_initial);
+  opti.set_initial(down, down_initial);
+  opti.set_initial(left, left_initial);
+  opti.set_initial(right, right_initial);
+  opti.set_initial(AX, AX_initial);
+  opti.set_initial(AY, AY_initial);
+  opti.set_initial(BX, BX_initial);
+  opti.set_initial(BY, BY_initial);
+  opti.set_initial(CX, CX_initial);
+  opti.set_initial(CY, CY_initial);
+  opti.set_initial(DX, DX_initial);
+  opti.set_initial(DY, DY_initial);
 
   DM lambda_initial;
   DM mu_initial;
+  DM obca_qx_initial;
+  DM obca_qy_initial;
   if (obstacle_count > 0) {
     lambda_initial = DM::zeros(4, obca_column_count);
     mu_initial = DM::zeros(4, obca_column_count);
+    obca_qx_initial = DM::zeros(obca_column_count);
+    obca_qy_initial = DM::zeros(obca_column_count);
     for (std::size_t i = 0; i < interval_count; ++i) {
       const double c = std::cos(initial.nodes[i].theta);
       const double s = std::sin(initial.nodes[i].theta);
@@ -421,11 +542,17 @@ OptimizationResult SolveFootprintNlp(
         for (std::size_t edge = 0; edge < 4; ++edge) {
           lambda_initial(edge, column) = rho * lambda_values[edge];
           mu_initial(edge, column) = rho * mu_values[edge];
+          obca_qx_initial(column) +=
+              halfspaces[obstacle].a[edge][0] * rho * lambda_values[edge];
+          obca_qy_initial(column) +=
+              halfspaces[obstacle].a[edge][1] * rho * lambda_values[edge];
         }
       }
     }
     opti.set_initial(lambda, lambda_initial);
     opti.set_initial(mu, mu_initial);
+    opti.set_initial(obca_qx, obca_qx_initial);
+    opti.set_initial(obca_qy, obca_qy_initial);
   }
 
   casadi::Dict solver_options;
@@ -433,7 +560,6 @@ OptimizationResult SolveFootprintNlp(
   solver_options["max_cpu_time"] = config.max_cpu_time;
   solver_options["tol"] = config.tolerance;
   solver_options["linear_solver"] = config.linear_solver;
-  solver_options["hessian_approximation"] = "limited-memory";
   solver_options["mu_strategy"] = "adaptive";
   solver_options["print_level"] = 5;
   casadi::Dict plugin_options;

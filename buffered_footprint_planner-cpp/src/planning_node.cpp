@@ -145,8 +145,8 @@ class PlanningNode {
   }
 
   bool LoadOptimizer() {
-    private_node_.param("min_dt", initial_config_.min_dt, 0.02);
-    private_node_.param("max_dt", initial_config_.max_dt, 0.25);
+    private_node_.param("min_dt", initial_config_.min_dt, 0.0001);
+    private_node_.param("max_dt", initial_config_.max_dt, 0.0500);
     private_node_.param("temporal_tightening_eta", initial_config_.eta, 0.90);
     private_node_.param("max_velocity", initial_config_.forward_speed, 0.20);
     private_node_.param("max_reverse_velocity", initial_config_.reverse_speed,
@@ -158,11 +158,12 @@ class PlanningNode {
     nlp_config_.max_dt = initial_config_.max_dt;
     private_node_.param("dmin", nlp_config_.dmin, 0.005);
     private_node_.param("total_time_limit", nlp_config_.total_time_limit, 35.0);
-    private_node_.param("ipopt_max_iterations", nlp_config_.max_iterations, 500);
-    private_node_.param("ipopt_max_cpu_time", nlp_config_.max_cpu_time, 60.0);
-    private_node_.param("ipopt_tolerance", nlp_config_.tolerance, 1e-5);
+    private_node_.param("ipopt_max_iterations", nlp_config_.max_iterations,
+                        399984);
+    private_node_.param("ipopt_max_cpu_time", nlp_config_.max_cpu_time, 20.0);
+    private_node_.param("ipopt_tolerance", nlp_config_.tolerance, 1e-3);
     private_node_.param("ipopt_linear_solver", nlp_config_.linear_solver,
-                        std::string("mumps"));
+                        std::string("ma27"));
     private_node_.param("results_directory", results_directory_,
                         std::string("results"));
     std::string geometry_error;
@@ -379,7 +380,7 @@ class PlanningNode {
     pending_result.configured_max_cpu_time = nlp_config_.max_cpu_time;
     pending_result.configured_tolerance = nlp_config_.tolerance;
     pending_result.configured_linear_solver = nlp_config_.linear_solver;
-    pending_result.configured_hessian_approximation = "limited-memory";
+    pending_result.configured_hessian_approximation = "exact";
     pending_result.configured_mu_strategy = "adaptive";
     std::string pending_save_error;
     if (!optimizer::SaveOptimizationResults(output_directory, initial,
