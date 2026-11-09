@@ -1,8 +1,12 @@
 #include <cstdlib>
+#include <csignal>
+#include <fstream>
+#include <iterator>
 #include <string>
 
 #include <ros/ros.h>
 #include <std_msgs/Bool.h>
+#include <unistd.h>
 
 #include "buffered_footprint_planner/SetObjectPose.h"
 #include "environment/scenario_manager.h"
@@ -13,6 +17,8 @@ namespace {
 
 class SceneRecorderNode {
  public:
+  enum class Outcome { kRunning, kSaved, kFailed };
+
   SceneRecorderNode() : private_node_("~") {}
 
   bool Initialize() {
@@ -29,6 +35,8 @@ class SceneRecorderNode {
       ROS_ERROR("Parameter 'tasks_root' is required");
       return false;
     }
+    private_node_.param("shutdown_launch_on_completion",
+                        shutdown_launch_on_completion_, false);
     command_client_ = private_node_.serviceClient<
         buffered_footprint_planner::SetObjectPose>(
         "/simulation/set_object_pose");
@@ -39,9 +47,12 @@ class SceneRecorderNode {
     lock_subscriber_ = private_node_.subscribe(
         "/simulation/start_locked", 1,
         &SceneRecorderNode::LockCallback, this);
-    ROS_INFO("Scene recorder ready; press Enter after editing to save one task");
+    ROS_INFO("Scene recorder ready; run keyboard_editor.launch in a separate "
+             "terminal and press Enter to save one task");
     return true;
   }
+
+  Outcome outcome() const { return outcome_; }
 
  private:
   bool Command(std::uint8_t action, const std::string& object_id,
@@ -90,28 +101,54 @@ class SceneRecorderNode {
     scene_locked_ = false;
   }
 
+  void RequestLaunchShutdown() const {
+    if (!shutdown_launch_on_completion_) return;
+    const pid_t parent_pid = ::getppid();
+    std::ifstream command_line(
+        "/proc/" + std::to_string(parent_pid) + "/cmdline",
+        std::ios::binary);
+    const std::string command((std::istreambuf_iterator<char>(command_line)),
+                              std::istreambuf_iterator<char>());
+    if (command.find("roslaunch") == std::string::npos) {
+      ROS_ERROR("Refusing to signal parent process %d because it is not "
+                "roslaunch", static_cast<int>(parent_pid));
+      return;
+    }
+    if (::kill(parent_pid, SIGINT) != 0) {
+      ROS_ERROR("Failed to request graceful roslaunch shutdown");
+    }
+  }
+
+  void Finish(Outcome outcome) {
+    outcome_ = outcome;
+    RequestLaunchShutdown();
+    ros::shutdown();
+  }
+
   void LockCallback(const std_msgs::Bool::ConstPtr& message) {
     const bool rising_edge = message->data && !last_locked_;
     last_locked_ = message->data;
-    if (!rising_edge || completed_) return;
-    completed_ = true;
+    if (!rising_edge || outcome_ != Outcome::kRunning) return;
     scene::SceneSnapshot snapshot;
     std::string error;
     if (!AcquireSnapshot(&snapshot, &error)) {
       ROS_ERROR("Cannot acquire scene for recording: %s", error.c_str());
       ReleaseScene();
-      ros::shutdown();
+      Finish(Outcome::kFailed);
       return;
     }
     scene::SceneRecorder recorder(tasks_root_);
     std::string saved_file;
     if (!recorder.SaveNext(snapshot, vehicle_, &saved_file, &error)) {
       ROS_ERROR("Scene validation/save failed: %s", error.c_str());
+      ReleaseScene();
+      Finish(Outcome::kFailed);
+      return;
     } else {
-      ROS_INFO("Scene saved without running planning: %s", saved_file.c_str());
+      ROS_INFO("Scene saved successfully: %s", saved_file.c_str());
     }
     ReleaseScene();
-    ros::shutdown();
+    Finish(Outcome::kSaved);
   }
 
   ros::NodeHandle private_node_;
@@ -120,8 +157,9 @@ class SceneRecorderNode {
   std::string vehicle_id_ = "vehicle_1";
   std::string tasks_root_;
   bool last_locked_ = false;
-  bool completed_ = false;
   bool scene_locked_ = false;
+  bool shutdown_launch_on_completion_ = false;
+  Outcome outcome_ = Outcome::kRunning;
   ros::ServiceClient command_client_;
   ros::Subscriber lock_subscriber_;
 };
@@ -133,5 +171,10 @@ int main(int argc, char** argv) {
   SceneRecorderNode node;
   if (!node.Initialize()) return EXIT_FAILURE;
   ros::spin();
-  return EXIT_SUCCESS;
+  if (node.outcome() == SceneRecorderNode::Outcome::kRunning) {
+    ROS_INFO("Scene creation cancelled by user before saving");
+    return EXIT_SUCCESS;
+  }
+  return node.outcome() == SceneRecorderNode::Outcome::kSaved ?
+      EXIT_SUCCESS : EXIT_FAILURE;
 }

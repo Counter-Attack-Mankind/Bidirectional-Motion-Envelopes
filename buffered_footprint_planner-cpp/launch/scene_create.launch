@@ -1,25 +1,20 @@
 <launch>
   <arg name="launch_rviz" default="true"/>
-  <arg name="launch_editor" default="true"/>
   <arg name="tasks_root"
        default="$(find buffered_footprint_planner)/environment/tasks"/>
 
   <node pkg="buffered_footprint_planner" type="simulation_node"
-        name="buffered_footprint_simulation" output="screen" required="true">
+        name="buffered_footprint_simulation" output="screen" required="false">
     <rosparam command="load" file="$(find buffered_footprint_planner)/config/env.yaml"/>
     <rosparam command="load" file="$(find buffered_footprint_planner)/config/planner.yaml"/>
   </node>
 
   <node pkg="buffered_footprint_planner" type="scene_recorder_node"
-        name="buffered_footprint_scene_recorder" output="screen" required="true">
+        name="buffered_footprint_scene_recorder" output="screen" required="false">
     <rosparam command="load" file="$(find buffered_footprint_planner)/config/env.yaml"/>
     <rosparam command="load" file="$(find buffered_footprint_planner)/config/planner.yaml"/>
     <param name="tasks_root" value="$(arg tasks_root)"/>
-  </node>
-
-  <node if="$(arg launch_editor)" pkg="buffered_footprint_planner" type="keyboard_scene_editor"
-        name="keyboard_scene_editor" output="screen" required="false">
-    <rosparam command="load" file="$(find buffered_footprint_planner)/config/env.yaml"/>
+    <param name="shutdown_launch_on_completion" value="true"/>
   </node>
 
   <node if="$(arg launch_rviz)" pkg="rviz" type="rviz" name="rviz"

@@ -1,5 +1,6 @@
 <launch>
   <arg name="task"/>
+  <arg name="launch_rviz" default="true"/>
   <arg name="tasks_root"
        default="$(find buffered_footprint_planner)/environment/tasks"/>
   <arg name="results_root"
@@ -13,4 +14,7 @@
     <param name="tasks_root" value="$(arg tasks_root)"/>
     <param name="results_directory" value="$(arg results_root)"/>
   </node>
+
+  <node if="$(arg launch_rviz)" pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find buffered_footprint_planner)/config/rviz.rviz"/>
 </launch>

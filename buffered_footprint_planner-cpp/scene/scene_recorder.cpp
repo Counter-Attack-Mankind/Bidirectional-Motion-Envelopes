@@ -50,7 +50,15 @@ bool SceneRecorder::SaveNext(SceneSnapshot snapshot,
     snapshot.task_id = ++next_id;
   }
   const fs::path file = directory / "scene.yaml";
-  if (!SceneStorage::Save(file.string(), snapshot, error)) return false;
+  if (!SceneStorage::Save(file.string(), snapshot, error)) {
+    std::error_code cleanup_code;
+    fs::remove_all(directory, cleanup_code);
+    if (cleanup_code && error) {
+      *error += "; additionally failed to remove incomplete task directory: " +
+                cleanup_code.message();
+    }
+    return false;
+  }
   if (saved_file) *saved_file = file.string();
   return true;
 }

@@ -15,7 +15,7 @@
 #include "common/math/math_utils.h"
 #include "environment/scenario_manager.h"
 #include "hybrid_astar/vehicle_parameter.h"
-#include "visualize/visualization_plot.h"
+#include "visualize/scene_visualizer.h"
 
 namespace {
 
@@ -43,7 +43,8 @@ class SimulationNode {
     private_node_.param("start_lock/position_threshold", position_threshold_, 0.002);
     private_node_.param("start_lock/yaw_threshold", yaw_threshold_, 0.0087266463);
 
-    VisualizationPlot::Init(private_node_, scenario_.frame_id(), marker_topic_);
+    visualizer_.Initialize(private_node_, scenario_.frame_id(), vehicle_,
+                           marker_topic_);
     obstacle_poses_publisher_ = private_node_.advertise<geometry_msgs::PoseArray>(
         "/simulation/scene_obstacle_poses", 1, true);
     vehicle_pose_publisher_ = private_node_.advertise<geometry_msgs::PoseStamped>(
@@ -61,18 +62,15 @@ class SimulationNode {
 
     QueueStaticScene();
     QueueVehicle();
-    VisualizationPlot::Trigger();
+    visualizer_.Trigger();
     PublishSceneState();
-    ROS_INFO("Scene editor ready; place objects and press Enter in the keyboard editor");
+    ROS_INFO("Scene editor ready; run keyboard_editor.launch in a separate "
+             "terminal to edit objects and press Enter");
     return true;
   }
 
  private:
-  struct VehiclePose {
-    double x = 0.0;
-    double y = 0.0;
-    double yaw = 0.0;
-  };
+  using VehiclePose = scene::Pose2d;
 
   bool LoadVehicle() {
     if (!private_node_.getParam("wheel_base", vehicle_.wheel_base) ||
@@ -106,82 +104,27 @@ class SimulationNode {
   }
 
   void QueueStaticScene() const {
-    const common::math::Polygon2d ground(scenario_.boundary());
-    VisualizationPlot::PlotFilledPolygon(ground, Color::White, 0,
-                                         "scenario_ground", 0.0);
-    VisualizationPlot::PlotPolygon(ground, 0.015, Color::Black, 0,
-                                   "scenario_boundary");
+    visualizer_.QueueMap(scenario_.Snapshot(vehicle_pose_));
     for (std::size_t i = 0; i < scenario_.obstacles().size(); ++i) {
       QueueObstacle(i);
     }
+    visualizer_.QueueGoal(scenario_.goal());
   }
 
   void QueueObstacle(std::size_t index) const {
-    const auto& obstacle = scenario_.obstacles()[index];
-    const auto polygon = obstacle.polygon();
-    const int marker_id = static_cast<int>(index);
-    VisualizationPlot::PlotFilledPolygon(polygon, Color::Grey, marker_id,
-                                         "scenario_obstacle_fill", 0.01);
-    VisualizationPlot::PlotPolygon(polygon, 0.012, Color::Black, marker_id,
-                                   "scenario_obstacle_outline");
-    VisualizationPlot::PlotText(obstacle.x, obstacle.y, obstacle.id, 0.12,
-                                Color::Black, marker_id,
-                                "scenario_obstacle_label");
+    visualizer_.QueueObstacle(scenario_.obstacles()[index], index);
   }
 
   void QueueVehicle() const {
-    const auto box = VehicleBox(vehicle_pose_);
-    const common::math::Polygon2d footprint(box);
-    VisualizationPlot::PlotPolygon(footprint, 0.015, Color::Blue, 0,
-                                   "simulation_vehicle_body");
-    const double nose_distance = vehicle_.wheel_base + vehicle_.front_hang;
-    VisualizationPlot::Plot(
-        {vehicle_pose_.x,
-         vehicle_pose_.x + nose_distance * std::cos(vehicle_pose_.yaw)},
-        {vehicle_pose_.y,
-         vehicle_pose_.y + nose_distance * std::sin(vehicle_pose_.yaw)},
-        0.018, Color::Blue, 0, "simulation_vehicle_heading");
-    VisualizationPlot::PlotPoints({vehicle_pose_.x}, {vehicle_pose_.y},
-                                  Color::Blue, 0.045, 0,
-                                  "simulation_vehicle_rear_axle");
-    VisualizationPlot::PlotText(box.max_x() + 0.07, box.max_y() + 0.07,
-                                "vehicle1", 0.08, Color::Blue, 0,
-                                "simulation_vehicle_label");
+    visualizer_.QueueStart(vehicle_pose_);
   }
 
   void QueueLockedStart() const {
-    const auto box = VehicleBox(locked_start_);
-    const common::math::Polygon2d footprint(box);
-    VisualizationPlot::PlotPolygon(footprint, 0.012, Color::Green, 0,
-                                   "simulation_locked_start");
-    VisualizationPlot::PlotPoints({locked_start_.x}, {locked_start_.y},
-                                  Color::Green, 0.03, 0,
-                                  "simulation_locked_start_rear_axle");
-    const double arrow_length =
-        vehicle_.wheel_base + vehicle_.front_hang + 0.04;
-    VisualizationPlot::PlotArrow(
-        locked_start_.x, locked_start_.y,
-        locked_start_.x + arrow_length * std::cos(locked_start_.yaw),
-        locked_start_.y + arrow_length * std::sin(locked_start_.yaw),
-        Color::Green, 0, "simulation_locked_start_heading");
-    const double label_x = (box.min_x() + box.max_x()) / 2.0;
-    const double label_y = box.min_y() - 0.10;
-    VisualizationPlot::PlotText(label_x, label_y, "START LOCKED", 0.08,
-                                Color::Green, 0,
-                                "simulation_locked_start_label");
+    visualizer_.QueueStart(locked_start_, true);
   }
 
   void ClearTaskMarkers() const {
-    VisualizationPlot::ClearMarkers("simulation_locked_start", 0, 0);
-    VisualizationPlot::ClearMarkers("simulation_locked_start_rear_axle", 0, 0);
-    VisualizationPlot::ClearMarkers("simulation_locked_start_heading", 0, 0);
-    VisualizationPlot::ClearMarkers("simulation_locked_start_label", 0, 0);
-    VisualizationPlot::ClearMarkers("planning_goal_body", 0, 0);
-    VisualizationPlot::ClearMarkers("planning_goal_heading", 0, 0);
-    VisualizationPlot::ClearMarkers("planning_goal_point", 0, 0);
-    VisualizationPlot::ClearMarkers("planning_goal_label", 0, 0);
-    VisualizationPlot::ClearMarkers("hybrid_astar_path", 0, 0);
-    VisualizationPlot::ClearMarkers("optimized_trajectory", 0, 1023);
+    visualizer_.ClearPlanningResults();
   }
 
   void BeginEditing() {
@@ -189,7 +132,7 @@ class SimulationNode {
     editing_active_ = true;
     start_locked_ = false;
     ClearTaskMarkers();
-    VisualizationPlot::Trigger();
+    visualizer_.Trigger();
     PublishSceneState();
     ROS_INFO("Scene editing resumed; previous planning task invalidated");
   }
@@ -221,7 +164,7 @@ class SimulationNode {
       stable_pose_ = vehicle_pose_;
       stable_since_ = ros::Time::now();
       ClearTaskMarkers();
-      VisualizationPlot::Trigger();
+      visualizer_.Trigger();
       PublishSceneState();
       ROS_INFO("Editing finished; checking Vehicle 1 stability for %.1f s",
                stationary_duration_);
@@ -268,7 +211,7 @@ class SimulationNode {
     }
 
     ++scene_revision_;
-    VisualizationPlot::Trigger();
+    visualizer_.Trigger();
     PublishSceneState();
     return FillResponse(true, "Pose updated", request.object_id, response);
   }
@@ -316,7 +259,7 @@ class SimulationNode {
     locked_start_ = vehicle_pose_;
     start_locked_ = true;
     QueueLockedStart();
-    VisualizationPlot::Trigger();
+    visualizer_.Trigger();
     PublishSceneState();
     ROS_INFO("Vehicle 1 start locked at (%.3f, %.3f, %.1f deg)",
              locked_start_.x, locked_start_.y,
@@ -371,6 +314,7 @@ class SimulationNode {
   ros::Time stable_since_;
   std::uint64_t scene_revision_ = 0;
   const std::string marker_topic_ = "/buffered_footprint_planner/markers";
+  visualization::SceneVisualizer visualizer_;
   ros::Publisher obstacle_poses_publisher_;
   ros::Publisher vehicle_pose_publisher_;
   ros::Publisher locked_start_publisher_;

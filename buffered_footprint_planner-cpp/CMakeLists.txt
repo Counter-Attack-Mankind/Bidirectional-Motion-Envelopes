@@ -25,7 +25,7 @@ generate_messages()
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES common_math common_util hybrid_astar environment visualization_plot
-            footprint_optimizer scene_core experiment_logging planning_pipeline
+            scene_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
             planning_config experiment_runner
   CATKIN_DEPENDS geometry_msgs message_runtime roscpp std_msgs tf2
                  tf2_geometry_msgs visualization_msgs
@@ -75,6 +75,10 @@ target_link_libraries(environment scene_core common_math ${catkin_LIBRARIES})
 add_library(visualization_plot visualize/visualization_plot.cpp)
 target_link_libraries(visualization_plot common_math common_util ${catkin_LIBRARIES})
 
+add_library(scene_visualizer visualize/scene_visualizer.cpp)
+target_link_libraries(scene_visualizer visualization_plot hybrid_astar scene_core
+                      ${catkin_LIBRARIES})
+
 add_library(footprint_optimizer
   optimizer/embodied_footprint.cpp
   optimizer/initial_guess.cpp
@@ -97,12 +101,12 @@ add_library(experiment_runner experiment/experiment_runner.cpp)
 target_link_libraries(experiment_runner planning_pipeline scene_core)
 
 add_executable(simulation_node src/simulation_node.cpp)
-target_link_libraries(simulation_node environment visualization_plot ${catkin_LIBRARIES})
+target_link_libraries(simulation_node environment scene_visualizer ${catkin_LIBRARIES})
 add_dependencies(simulation_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_executable(planning_node src/planning_node.cpp)
 target_link_libraries(planning_node environment hybrid_astar footprint_optimizer
-                      planning_pipeline visualization_plot ${catkin_LIBRARIES})
+                      planning_pipeline scene_visualizer ${catkin_LIBRARIES})
 add_dependencies(planning_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_executable(scene_recorder_node src/scene_recorder_node.cpp)
@@ -112,7 +116,7 @@ add_dependencies(scene_recorder_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catki
 
 add_executable(experiment_node src/experiment_node.cpp)
 target_link_libraries(experiment_node experiment_runner planning_pipeline
-                      scene_core ${catkin_LIBRARIES})
+                      scene_core scene_visualizer ${catkin_LIBRARIES})
 add_dependencies(experiment_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_executable(keyboard_scene_editor simulation/keyboard_scene_editor.cpp)
@@ -120,7 +124,7 @@ target_link_libraries(keyboard_scene_editor ${catkin_LIBRARIES})
 add_dependencies(keyboard_scene_editor ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 install(TARGETS common_math common_util hybrid_astar environment visualization_plot
-                footprint_optimizer scene_core experiment_logging planning_pipeline
+                scene_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
                 planning_config experiment_runner simulation_node planning_node scene_recorder_node
                 experiment_node keyboard_scene_editor
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
