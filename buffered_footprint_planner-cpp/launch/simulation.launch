@@ -1,5 +1,8 @@
 <launch>
   <arg name="launch_rviz" default="true"/>
+  <arg name="launch_editor" default="true"/>
+  <arg name="results_root"
+       default="$(find buffered_footprint_planner)/results"/>
 
   <node pkg="buffered_footprint_planner" type="simulation_node"
         name="buffered_footprint_simulation" output="screen" required="true">
@@ -13,7 +16,13 @@
     <rosparam command="load" file="$(find buffered_footprint_planner)/config/planner.yaml"/>
     <rosparam command="load" file="$(find buffered_footprint_planner)/config/optimizer.yaml"/>
     <param name="results_directory"
-           value="$(find buffered_footprint_planner)/results"/>
+           value="$(arg results_root)"/>
+  </node>
+
+  <node if="$(arg launch_editor)" pkg="buffered_footprint_planner"
+        type="keyboard_scene_editor" name="keyboard_scene_editor"
+        output="screen" required="false">
+    <rosparam command="load" file="$(find buffered_footprint_planner)/config/env.yaml"/>
   </node>
 
   <node if="$(arg launch_rviz)" pkg="rviz" type="rviz" name="rviz"

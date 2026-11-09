@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CASADI REQUIRED casadi)
+find_package(yaml-cpp REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
@@ -24,7 +25,8 @@ generate_messages()
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES common_math common_util hybrid_astar environment visualization_plot
-            footprint_optimizer
+            footprint_optimizer scene_core experiment_logging planning_pipeline
+            planning_config experiment_runner
   CATKIN_DEPENDS geometry_msgs message_runtime roscpp std_msgs tf2
                  tf2_geometry_msgs visualization_msgs
 )
@@ -60,8 +62,15 @@ add_library(hybrid_astar
 )
 target_link_libraries(hybrid_astar common_math common_util)
 
+add_library(scene_core
+  scene/scene_snapshot.cpp
+  scene/scene_storage.cpp
+  scene/scene_recorder.cpp
+)
+target_link_libraries(scene_core common_math yaml-cpp)
+
 add_library(environment environment/scenario_manager.cpp)
-target_link_libraries(environment common_math ${catkin_LIBRARIES})
+target_link_libraries(environment scene_core common_math ${catkin_LIBRARIES})
 
 add_library(visualization_plot visualize/visualization_plot.cpp)
 target_link_libraries(visualization_plot common_math common_util ${catkin_LIBRARIES})
@@ -74,21 +83,46 @@ add_library(footprint_optimizer
 target_link_libraries(footprint_optimizer common_math hybrid_astar
                       ${CASADI_LIBRARIES} ${catkin_LIBRARIES})
 
+add_library(experiment_logging experiment/experiment_logger.cpp)
+target_link_libraries(experiment_logging scene_core footprint_optimizer)
+
+add_library(planning_config planning/planning_config_loader.cpp)
+target_link_libraries(planning_config footprint_optimizer ${catkin_LIBRARIES})
+
+add_library(planning_pipeline planning/planning_pipeline.cpp)
+target_link_libraries(planning_pipeline planning_config hybrid_astar footprint_optimizer
+                      experiment_logging scene_core ${catkin_LIBRARIES})
+
+add_library(experiment_runner experiment/experiment_runner.cpp)
+target_link_libraries(experiment_runner planning_pipeline scene_core)
+
 add_executable(simulation_node src/simulation_node.cpp)
 target_link_libraries(simulation_node environment visualization_plot ${catkin_LIBRARIES})
 add_dependencies(simulation_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_executable(planning_node src/planning_node.cpp)
 target_link_libraries(planning_node environment hybrid_astar footprint_optimizer
-                      visualization_plot ${catkin_LIBRARIES})
+                      planning_pipeline visualization_plot ${catkin_LIBRARIES})
 add_dependencies(planning_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+add_executable(scene_recorder_node src/scene_recorder_node.cpp)
+target_link_libraries(scene_recorder_node environment scene_core planning_config
+                      ${catkin_LIBRARIES})
+add_dependencies(scene_recorder_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+add_executable(experiment_node src/experiment_node.cpp)
+target_link_libraries(experiment_node experiment_runner planning_pipeline
+                      scene_core ${catkin_LIBRARIES})
+add_dependencies(experiment_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_executable(keyboard_scene_editor simulation/keyboard_scene_editor.cpp)
 target_link_libraries(keyboard_scene_editor ${catkin_LIBRARIES})
 add_dependencies(keyboard_scene_editor ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-install(TARGETS common_math common_util hybrid_astar environment visualization_plot footprint_optimizer
-                simulation_node planning_node keyboard_scene_editor
+install(TARGETS common_math common_util hybrid_astar environment visualization_plot
+                footprint_optimizer scene_core experiment_logging planning_pipeline
+                planning_config experiment_runner simulation_node planning_node scene_recorder_node
+                experiment_node keyboard_scene_editor
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
@@ -96,3 +130,5 @@ install(TARGETS common_math common_util hybrid_astar environment visualization_p
 
 install(DIRECTORY include/ DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
 install(DIRECTORY config launch DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+install(DIRECTORY environment/tasks
+        DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/environment)

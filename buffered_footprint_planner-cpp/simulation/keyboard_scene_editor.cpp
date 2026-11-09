@@ -195,7 +195,7 @@ class KeyboardSceneEditor {
 
   void LockedCallback(const std_msgs::Bool::ConstPtr& message) {
     if (message->data && !last_locked_) {
-      std::cout << "\nVehicle 1 start locked. Use RViz 2D Nav Goal.\n";
+      std::cout << "\nVehicle 1 start locked; the active mode will continue automatically.\n";
       PrintCurrent();
     }
     last_locked_ = message->data;

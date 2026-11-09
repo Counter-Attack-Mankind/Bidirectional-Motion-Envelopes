@@ -67,11 +67,26 @@ struct InitialGuessDiagnostics {
   std::vector<RejectedInterval> rejected_intervals;
 };
 
+struct DenseTrajectorySample {
+  std::size_t dense_index = 0;
+  double time = 0.0;
+  TrajectoryNode node;
+  double phi_raw = 0.0;
+  double phi_clipped = 0.0;
+  double w_raw = 0.0;
+  double w_clipped = 0.0;
+};
+
+struct InitialGuessTrace {
+  std::vector<DenseTrajectorySample> dense_samples;
+  std::vector<std::size_t> selected_dense_indices;
+};
+
 bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
                        const VehicleParameter& vehicle,
                        const InitialGuessConfig& config,
                        Trajectory* trajectory, InitialGuessDiagnostics* diagnostics,
-                       std::string* error);
+                       std::string* error, InitialGuessTrace* trace = nullptr);
 
 bool SaveInitialGuessDiagnostics(const std::string& output_file,
                                  const InitialGuessDiagnostics& diagnostics,

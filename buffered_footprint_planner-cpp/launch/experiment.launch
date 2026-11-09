@@ -1,0 +1,16 @@
+<launch>
+  <arg name="task"/>
+  <arg name="tasks_root"
+       default="$(find buffered_footprint_planner)/environment/tasks"/>
+  <arg name="results_root"
+       default="$(find buffered_footprint_planner)/results"/>
+
+  <node pkg="buffered_footprint_planner" type="experiment_node"
+        name="buffered_footprint_experiment" output="screen" required="true">
+    <rosparam command="load" file="$(find buffered_footprint_planner)/config/planner.yaml"/>
+    <rosparam command="load" file="$(find buffered_footprint_planner)/config/optimizer.yaml"/>
+    <param name="task" value="$(arg task)"/>
+    <param name="tasks_root" value="$(arg tasks_root)"/>
+    <param name="results_directory" value="$(arg results_root)"/>
+  </node>
+</launch>

@@ -43,7 +43,7 @@ struct OptimizationResult {
   bool solver_succeeded = false;
   bool success = false;
   std::string status;
-  int iterations = 0;
+  int iterations = -1;
   double solve_time = 0.0;
   double objective = 0.0;
   double max_dynamics_residual = 0.0;

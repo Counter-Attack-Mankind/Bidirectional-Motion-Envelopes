@@ -279,6 +279,7 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
                         const InitialGuessConfig& config,
                         Trajectory* trajectory,
                         InitialGuessDiagnostics* diagnostics,
+                         std::vector<std::size_t>* selected_indices,
                         std::string* error) {
   const double base_dt = terminal_time /
                          static_cast<double>(dense.size() - 1);
@@ -356,6 +357,7 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
   trajectory->nodes.clear();
   trajectory->intervals.clear();
   for (std::size_t index : selected) trajectory->nodes.push_back(dense[index]);
+  if (selected_indices) *selected_indices = selected;
   for (std::size_t i = 0; i < interval_time.size(); ++i) {
     const int direction = IntervalDirection(
         dense, selected[i], selected[i + 1], previous_direction);
@@ -466,8 +468,9 @@ bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
                        const InitialGuessConfig& config,
                        Trajectory* trajectory,
                        InitialGuessDiagnostics* diagnostics,
-                       std::string* error) {
+                       std::string* error, InitialGuessTrace* trace) {
   *diagnostics = InitialGuessDiagnostics{};
+  if (trace) *trace = InitialGuessTrace{};
   diagnostics->hybrid_point_count = hybrid_path.x.size();
   if (!trajectory || hybrid_path.x.size() < 2 ||
       hybrid_path.x.size() != hybrid_path.y.size() ||
@@ -532,23 +535,38 @@ bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
     return false;
   }
   const double base_dt = terminal_time / static_cast<double>(dense.size() - 1);
+  std::vector<double> phi_raw(dense.size(), 0.0);
+  std::vector<double> w_raw(dense.size(), 0.0);
   for (std::size_t i = 1; i + 1 < dense.size(); ++i) {
     if (std::abs(dense[i].v) < 1e-6) {
+      phi_raw[i] = 0.0;
       dense[i].phy = 0.0;
     } else {
-      dense[i].phy = std::clamp(
-          std::atan((dense[i + 1].theta - dense[i].theta) *
-                    vehicle.wheel_base / (base_dt * dense[i].v)),
-          -vehicle.delta_max, vehicle.delta_max);
+      phi_raw[i] = std::atan((dense[i + 1].theta - dense[i].theta) *
+                             vehicle.wheel_base /
+                             (base_dt * dense[i].v));
+      dense[i].phy = std::clamp(phi_raw[i], -vehicle.delta_max,
+                                vehicle.delta_max);
     }
   }
   for (std::size_t i = 1; i + 1 < dense.size(); ++i) {
-    dense[i].w = std::clamp((dense[i + 1].phy - dense[i].phy) / base_dt,
+    w_raw[i] = (dense[i + 1].phy - dense[i].phy) / base_dt;
+    dense[i].w = std::clamp(w_raw[i],
                             -vehicle.omega_max, vehicle.omega_max);
+  }
+  if (trace) {
+    trace->dense_samples.reserve(dense.size());
+    for (std::size_t i = 0; i < dense.size(); ++i) {
+      trace->dense_samples.push_back(
+          {i, i * base_dt, dense[i], phi_raw[i], dense[i].phy,
+           w_raw[i], dense[i].w});
+    }
   }
   diagnostics->dense_node_count = dense.size();
   if (!SelectTemporalMesh(dense, terminal_time, mandatory, vehicle, config,
-                          trajectory, diagnostics, error)) {
+                           trajectory, diagnostics,
+                           trace ? &trace->selected_dense_indices : nullptr,
+                           error)) {
     diagnostics->failure_reason = error ? *error : "TimeDistribution failed";
     return false;
   }

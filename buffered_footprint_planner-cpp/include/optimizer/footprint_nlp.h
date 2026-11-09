@@ -25,7 +25,8 @@ OptimizationResult SolveFootprintNlp(
     const Trajectory& initial, const VehicleParameter& vehicle,
     const std::vector<common::math::Polygon2d>& obstacles,
     const std::array<double, 4>& bounds,
-    const FootprintNlpConfig& config);
+    const FootprintNlpConfig& config,
+    const std::string& ipopt_log_file = std::string());
 
 bool SaveOptimizationResults(const std::string& result_directory,
                              const Trajectory& initial,

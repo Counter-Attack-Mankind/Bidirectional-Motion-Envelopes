@@ -183,7 +183,8 @@ OptimizationResult SolveFootprintNlp(
     const Trajectory& initial, const VehicleParameter& vehicle,
     const std::vector<common::math::Polygon2d>& obstacles,
     const std::array<double, 4>& bounds,
-    const FootprintNlpConfig& config) {
+    const FootprintNlpConfig& config,
+    const std::string& ipopt_log_file) {
   OptimizationResult result;
   result.initial_guess_succeeded = true;
   result.configured_max_iterations = config.max_iterations;
@@ -562,6 +563,10 @@ OptimizationResult SolveFootprintNlp(
   solver_options["linear_solver"] = config.linear_solver;
   solver_options["mu_strategy"] = "adaptive";
   solver_options["print_level"] = 5;
+  if (!ipopt_log_file.empty()) {
+    solver_options["output_file"] = ipopt_log_file;
+    solver_options["file_print_level"] = 5;
+  }
   casadi::Dict plugin_options;
   plugin_options["expand"] = true;
   plugin_options["print_time"] = true;
