@@ -19,6 +19,7 @@ class SweptAreaVisualizer {
                   std::string* error);
   void Update(const optimizer::TrajectoryNode& pose);
   void Reset(const optimizer::TrajectoryNode& start_pose);
+  void Clear();
   void QueueDirtyMarkers();
 
   std::size_t cell_count() const { return occupied_cells_.size(); }

@@ -39,6 +39,7 @@ class SceneVisualizer {
   void QueuePlaybackVehicle(const PlaybackState& state) const;
 
   void ClearPlanningResults() const;
+  void ClearTrajectoryPlayback() const;
   void Trigger() const;
 
  private:

@@ -14,7 +14,9 @@ class ExperimentRunner {
 
   bool RunTask(const std::string& tasks_root, int task_id,
                planning_platform::PlanningRunResult* result,
-               std::string* error) const;
+               std::string* error,
+               planning_platform::PlanningPipeline::HybridCompleteCallback
+                   hybrid_complete = {}) const;
 
  private:
   planning_platform::PlanningConfiguration configuration_;

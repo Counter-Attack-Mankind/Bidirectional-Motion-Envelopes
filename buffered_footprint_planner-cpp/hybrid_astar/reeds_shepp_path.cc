@@ -68,20 +68,25 @@ bool ReedShepp::ShortestFeasibleRSP(
     const std::shared_ptr<Node3d> start_node,
     const std::shared_ptr<Node3d> end_node,
     const std::function<bool(const ReedSheppPath&)>& valid,
-    std::shared_ptr<ReedSheppPath> optimal_path) {
+    std::shared_ptr<ReedSheppPath> optimal_path,
+    const std::function<bool()>& should_stop) {
+  if (should_stop && should_stop()) return false;
   std::vector<ReedSheppPath> all_possible_paths;
   if (!GenerateRSPs(start_node, end_node, &all_possible_paths)) {
     return false;
   }
+  if (should_stop && should_stop()) return false;
   std::vector<size_t> order(all_possible_paths.size());
   std::iota(order.begin(), order.end(), 0);
   std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
     return all_possible_paths[a].total_length < all_possible_paths[b].total_length;
   });
   for (size_t index : order) {
+    if (should_stop && should_stop()) return false;
     auto& path = all_possible_paths[index];
     if (path.total_length <= 0.0 ||
         !GenerateLocalConfigurations(start_node, end_node, &path) ||
+        (should_stop && should_stop()) ||
         path.x.empty() ||
         std::hypot(path.x.back() - end_node->GetX(),
                    path.y.back() - end_node->GetY()) > 1e-3 ||
@@ -90,6 +95,7 @@ bool ReedShepp::ShortestFeasibleRSP(
         !valid(path)) {
       continue;
     }
+    if (should_stop && should_stop()) return false;
     *optimal_path = std::move(path);
     return true;
   }

@@ -34,7 +34,9 @@ double GridSearch::EuclidDistance(const double x1, const double y1,
   return std::sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
 }
 
-bool GridSearch::CheckConstraints(const std::shared_ptr<Node2d> &node) {
+bool GridSearch::CheckConstraints(
+    const std::shared_ptr<Node2d> &node,
+    const std::function<bool()>& should_stop) {
   const double node_grid_x = node->GetGridX();
   const double node_grid_y = node->GetGridY();
   if (node_grid_x > max_grid_x_ || node_grid_x < 0 ||
@@ -45,6 +47,7 @@ bool GridSearch::CheckConstraints(const std::shared_ptr<Node2d> &node) {
     return true;
   }
   for (const auto &ob : obstacles_) {
+    if (should_stop && should_stop()) return false;
     if(ob.IsPointIn({ node->GetX(), node->GetY() })) {
       return false;
     }
@@ -104,7 +107,8 @@ std::vector<std::shared_ptr<Node2d>> GridSearch::GenerateNextNodes(
 }
 
 bool GridSearch::GenerateDpMap(
-    const double ex, const double ey, const std::array<double, 4> &XYbounds) {
+    const double ex, const double ey, const std::array<double, 4> &XYbounds,
+    const std::function<bool()>& should_stop) {
   std::priority_queue<std::pair<int64_t, double>,
       std::vector<std::pair<int64_t, double>>, cmp>
       open_pq;
@@ -114,6 +118,17 @@ bool GridSearch::GenerateDpMap(
   // XYbounds with xmin, xmax, ymin, ymax
   max_grid_y_ = std::round((XYbounds_[3] - XYbounds_[2]) / xy_grid_resolution_);
   max_grid_x_ = std::round((XYbounds_[1] - XYbounds_[0]) / xy_grid_resolution_);
+  const long double grid_cell_count =
+      (static_cast<long double>(max_grid_x_) + 1.0L) *
+      (static_cast<long double>(max_grid_y_) + 1.0L);
+  // Avoid a multi-second unordered_map rehash crossing the hard deadline.
+  // The cap prevents malformed bounds from causing an unbounded reservation.
+  if (grid_cell_count > 0.0L && grid_cell_count <= 10000000.0L) {
+    const auto reserve_count = static_cast<std::size_t>(grid_cell_count);
+    dp_map_.reserve(reserve_count);
+    open_set.reserve(reserve_count);
+  }
+  if (should_stop && should_stop()) return false;
   std::shared_ptr<Node2d> end_node =
       std::make_shared<Node2d>(ex, ey, xy_grid_resolution_, XYbounds_);
   open_set.emplace(end_node->GetIndex(), end_node);
@@ -122,17 +137,20 @@ bool GridSearch::GenerateDpMap(
   // Grid a star begins
   size_t explored_node_num = 0;
   while (!open_pq.empty()) {
+    if (should_stop && should_stop()) return false;
     const int64_t current_id = open_pq.top().first;
     const double queued_cost = open_pq.top().second;
     open_pq.pop();
     std::shared_ptr<Node2d> current_node = open_set[current_id];
     if (dp_map_.count(current_id) ||
         queued_cost > current_node->GetCost() + 1e-12) continue;
+    if (should_stop && should_stop()) return false;
     dp_map_.emplace(current_node->GetIndex(), current_node);
     std::vector<std::shared_ptr<Node2d>> next_nodes =
         std::move(GenerateNextNodes(current_node));
     for (auto &next_node : next_nodes) {
-      if (!CheckConstraints(next_node)) {
+      if (should_stop && should_stop()) return false;
+      if (!CheckConstraints(next_node, should_stop)) {
         continue;
       }
       if (dp_map_.find(next_node->GetIndex()) != dp_map_.end()) {

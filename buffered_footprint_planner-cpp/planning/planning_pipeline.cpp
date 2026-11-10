@@ -33,7 +33,8 @@ PlanningPipeline::PlanningPipeline(PlanningConfiguration configuration)
     : configuration_(std::move(configuration)) {}
 
 PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
-                                        const std::string& mode) const {
+                                        const std::string& mode,
+                                        HybridCompleteCallback hybrid_complete) const {
   PlanningRunResult result;
   experiment::ExperimentLogger logger;
   std::string error;
@@ -71,14 +72,24 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
       snapshot.goal.x, snapshot.goal.y, snapshot.goal.yaw,
       &result.hybrid_path);
   result.hybrid_elapsed = SecondsSince(hybrid_begin);
+  result.hybrid_timed_out = planner.timed_out();
   logger.WriteHybridPath(result.result_directory, result.hybrid_path, &error);
+  const std::string hybrid_status = result.hybrid_timed_out
+      ? "timeout after " + std::to_string(result.hybrid_elapsed) + " s"
+      : (result.hybrid_succeeded ? "succeeded" : "failed");
   logger.WriteRunStatus(result.result_directory, "hybrid_astar",
                         result.hybrid_succeeded,
-                        result.hybrid_succeeded ? "succeeded" : "failed",
+                        hybrid_status,
                         result.hybrid_elapsed, &error);
   if (!result.hybrid_succeeded) {
-    result.status = "Hybrid A* failed";
+    result.status = result.hybrid_timed_out
+        ? "Hybrid A* timeout after " + std::to_string(result.hybrid_elapsed) +
+              " s (8.0 s limit)"
+        : "Hybrid A* failed";
     return result;
+  }
+  if (hybrid_complete) {
+    hybrid_complete(result.hybrid_path, result.hybrid_elapsed);
   }
 
   result.initial_guess_succeeded = optimizer::BuildInitialGuess(

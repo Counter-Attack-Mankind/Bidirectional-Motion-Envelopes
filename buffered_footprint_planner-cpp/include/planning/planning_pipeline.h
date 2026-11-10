@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 
 #include "hybrid_astar/hybrid_a_star.h"
@@ -13,6 +14,7 @@ namespace planning_platform {
 struct PlanningRunResult {
   bool scene_valid = false;
   bool hybrid_succeeded = false;
+  bool hybrid_timed_out = false;
   bool initial_guess_succeeded = false;
   bool success = false;
   std::string status;
@@ -27,10 +29,14 @@ struct PlanningRunResult {
 
 class PlanningPipeline {
  public:
+  using HybridCompleteCallback =
+      std::function<void(const planning::HybridAStartResult&, double)>;
+
   explicit PlanningPipeline(PlanningConfiguration configuration);
 
   PlanningRunResult Run(const scene::SceneSnapshot& snapshot,
-                        const std::string& mode) const;
+                        const std::string& mode,
+                        HybridCompleteCallback hybrid_complete = {}) const;
 
  private:
   PlanningConfiguration configuration_;

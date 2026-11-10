@@ -20,6 +20,7 @@
 
 #pragma once
 #include <cstdint>
+#include <functional>
 
 #include <limits>
 #include <memory>
@@ -110,7 +111,8 @@ public:
   bool GenerateAStarPath(
       double sx, double sy, double ex, double ey,
       const std::array<double, 4>& XYbounds, GridAStartResult* result);
-  bool GenerateDpMap(double ex, double ey, const std::array<double, 4>& XYbounds);
+  bool GenerateDpMap(double ex, double ey, const std::array<double, 4>& XYbounds,
+                     const std::function<bool()>& should_stop = {});
   double CheckDpMap(double sx, double sy);
 
 private:
@@ -118,7 +120,8 @@ private:
                         double y2);
   std::vector<std::shared_ptr<Node2d>> GenerateNextNodes(
       const std::shared_ptr<Node2d>& node);
-  bool CheckConstraints(const std::shared_ptr<Node2d>& node);
+  bool CheckConstraints(const std::shared_ptr<Node2d>& node,
+                        const std::function<bool()>& should_stop = {});
   void LoadGridAStarResult(GridAStartResult* result);
 
 private:

@@ -20,6 +20,7 @@
 
 #include "hybrid_astar/hybrid_a_star.h"
 
+#include <chrono>
 #include <memory>
 #include <utility>
 
@@ -31,6 +32,17 @@ using common::util::HybridAStarLogger;
 
 using common::math::Box2d;
 using common::math::Vec2d;
+
+double HybridAStar::elapsed_seconds() const {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                       search_begin_).count();
+}
+
+bool HybridAStar::DeadlineExceeded() {
+  if (std::chrono::steady_clock::now() < search_deadline_) return false;
+  timed_out_ = true;
+  return true;
+}
 
 HybridAStar::HybridAStar(const ParkingPlannerConfig &config, 
                          const VehicleParameter &vehicle, 
@@ -68,7 +80,8 @@ bool HybridAStar::AnalyticExpansion(const std::shared_ptr<Node3d>& current_node)
           current_node, end_node_,
           [this](const ReedSheppPath& path) {
             return RSPCheck(std::make_shared<ReedSheppPath>(path));
-          }, reeds_shepp_to_check)) {
+          }, reeds_shepp_to_check,
+          [this]() { return DeadlineExceeded(); })) {
     return false;
   }
 
@@ -108,6 +121,7 @@ bool HybridAStar::ValidityCheck(const std::shared_ptr<Node3d>& node) {
   }
 
   for (size_t i = check_start_index; i < node_step_size; ++i) {
+    if (DeadlineExceeded()) return false;
     common::math::Pose pose(traversed_x[i], traversed_y[i], traversed_phi[i]);
     auto vehicle_box = vehicle_param_.GenerateBox(pose);
     for (const auto& corner : vehicle_box.corners()) {
@@ -441,6 +455,12 @@ bool HybridAStar::GetTemporalProfile(HybridAStartResult* result) {
 bool HybridAStar::Plan(
     double sx, double sy, double sphi, double ex, double ey, double ephi, HybridAStartResult* result) {
   // clear containers
+  search_begin_ = std::chrono::steady_clock::now();
+  search_deadline_ = search_begin_ +
+      std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+          std::chrono::duration<double>(kSearchTimeoutSeconds -
+                                        kDeadlineGuardSeconds));
+  timed_out_ = false;
   open_set_.clear();
   close_set_.clear();
   open_pq_ = decltype(open_pq_)();
@@ -464,7 +484,15 @@ bool HybridAStar::Plan(
     HybridAStarLogger::Finalize();
     return false;
   }
-  grid_a_star_heuristic_generator_->GenerateDpMap(ex, ey, XYbounds_);
+  if (!grid_a_star_heuristic_generator_->GenerateDpMap(
+          ex, ey, XYbounds_, [this]() { return DeadlineExceeded(); })) {
+    if (timed_out_) {
+      printf("Hybrid A* timeout after %.3f s while building DP map\n",
+             elapsed_seconds());
+    }
+    HybridAStarLogger::Finalize();
+    return false;
+  }
 
   // DEBUG: check if DP map reaches start
   double start_dp_cost = grid_a_star_heuristic_generator_->CheckDpMap(sx, sy);
@@ -486,6 +514,11 @@ bool HybridAStar::Plan(
   double heuristic_time = 0.0;
   double rs_time = 0.0;
   while (!open_pq_.empty()) {
+    if (DeadlineExceeded()) {
+      printf("Hybrid A* timeout after %.3f s (%zu nodes explored)\n",
+             elapsed_seconds(), explored_node_num);
+      break;
+    }
     // CRITICAL FIX: Add exploration limit to prevent infinite search
     if (explored_node_num >= planner_open_space_config_.explore_node_num) {
       printf("Hybrid A* reached exploration limit: %ld nodes explored\n",
@@ -515,6 +548,7 @@ bool HybridAStar::Plan(
     }
     close_set_.emplace(current_node->GetIndex(), current_node);
     for (size_t i = 0; i < next_node_num_; ++i) {
+      if (DeadlineExceeded()) break;
       std::shared_ptr<Node3d> next_node = Next_node_generator(current_node, i);
       // boundary check failure handle
       if (next_node == nullptr) {
@@ -547,7 +581,8 @@ bool HybridAStar::Plan(
     }
   }
   if (final_node_ == nullptr) {
-    printf("Hybrid A* search failed: final_node is nullptr\n");
+    printf("Hybrid A* search %s: final_node is nullptr\n",
+           timed_out_ ? "timed out" : "failed");
     printf("Total nodes explored: %zu\n", explored_node_num);
     HybridAStarLogger::Finalize();
     return false;

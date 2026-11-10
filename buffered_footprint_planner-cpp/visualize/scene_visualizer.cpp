@@ -170,7 +170,16 @@ void SceneVisualizer::QueuePlaybackVehicle(const PlaybackState& state) const {
 
 void SceneVisualizer::ClearPlanningResults() const {
   VisualizationPlot::ClearMarkers("hybrid_astar_path", 0, 0);
+  ClearTrajectoryPlayback();
+}
+
+void SceneVisualizer::ClearTrajectoryPlayback() const {
   VisualizationPlot::ClearMarkers("optimized_trajectory", 0, 1023);
+  VisualizationPlot::ClearMarkers("trajectory_optimized_configurations", 0, 0);
+  VisualizationPlot::ClearMarkers("trajectory_vehicle_body", 0, 0);
+  VisualizationPlot::ClearMarkers("trajectory_vehicle_rear_axle", 0, 0);
+  VisualizationPlot::ClearMarkers("trajectory_vehicle_heading", 0, 0);
+  VisualizationPlot::ClearMarkers("trajectory_playback_status", 0, 0);
 }
 
 void SceneVisualizer::Trigger() const { VisualizationPlot::Trigger(); }

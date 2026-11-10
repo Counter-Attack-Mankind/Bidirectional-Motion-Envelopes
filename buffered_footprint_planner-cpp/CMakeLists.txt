@@ -26,7 +26,7 @@ catkin_package(
   INCLUDE_DIRS include
   LIBRARIES common_math common_util hybrid_astar environment visualization_plot
             scene_visualizer trajectory_player footprint_visualizer
-            swept_area_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
+            swept_area_visualizer trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
             planning_config experiment_runner
   CATKIN_DEPENDS geometry_msgs message_runtime roscpp std_msgs tf2
                  tf2_geometry_msgs visualization_msgs
@@ -90,6 +90,12 @@ add_library(swept_area_visualizer visualize/swept_area_visualizer.cpp)
 target_link_libraries(swept_area_visualizer visualization_plot common_math
                       ${catkin_LIBRARIES})
 
+add_library(trajectory_playback_visualizer
+  visualize/trajectory_playback_visualizer.cpp)
+target_link_libraries(trajectory_playback_visualizer trajectory_player
+                      footprint_visualizer swept_area_visualizer
+                      scene_visualizer ${catkin_LIBRARIES})
+
 add_library(footprint_optimizer
   optimizer/embodied_footprint.cpp
   optimizer/initial_guess.cpp
@@ -117,7 +123,8 @@ add_dependencies(simulation_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EX
 
 add_executable(planning_node src/planning_node.cpp)
 target_link_libraries(planning_node environment hybrid_astar footprint_optimizer
-                      planning_pipeline scene_visualizer ${catkin_LIBRARIES})
+                      planning_pipeline scene_visualizer
+                      trajectory_playback_visualizer ${catkin_LIBRARIES})
 add_dependencies(planning_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_executable(scene_recorder_node src/scene_recorder_node.cpp)
@@ -129,6 +136,7 @@ add_executable(experiment_node src/experiment_node.cpp)
 target_link_libraries(experiment_node experiment_runner planning_pipeline
                       scene_core scene_visualizer trajectory_player
                       footprint_visualizer swept_area_visualizer
+                      trajectory_playback_visualizer
                       ${catkin_LIBRARIES})
 add_dependencies(experiment_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
@@ -136,9 +144,15 @@ add_executable(keyboard_scene_editor simulation/keyboard_scene_editor.cpp)
 target_link_libraries(keyboard_scene_editor ${catkin_LIBRARIES})
 add_dependencies(keyboard_scene_editor ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
+if(CATKIN_ENABLE_TESTING)
+  add_executable(hybrid_astar_timeout_regression
+    tests/hybrid_astar_timeout_regression.cpp)
+  target_link_libraries(hybrid_astar_timeout_regression hybrid_astar)
+endif()
+
 install(TARGETS common_math common_util hybrid_astar environment visualization_plot
                 scene_visualizer trajectory_player footprint_visualizer
-                swept_area_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
+                swept_area_visualizer trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
                 planning_config experiment_runner simulation_node planning_node scene_recorder_node
                 experiment_node keyboard_scene_editor
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

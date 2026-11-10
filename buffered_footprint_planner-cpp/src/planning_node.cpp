@@ -1,5 +1,9 @@
 #include <cstdlib>
+#include <atomic>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 
 #include <ros/ros.h>
 #include <std_msgs/Bool.h>
@@ -9,12 +13,16 @@
 #include "planning/planning_config_loader.h"
 #include "planning/planning_pipeline.h"
 #include "visualize/scene_visualizer.h"
+#include "visualize/trajectory_playback_visualizer.h"
 
 namespace {
 
 class PlanningNode {
  public:
   PlanningNode() : private_node_("~") {}
+  ~PlanningNode() {
+    if (planning_thread_.joinable()) planning_thread_.join();
+  }
 
   bool Initialize() {
     if (!scenario_.Load(private_node_)) return false;
@@ -27,6 +35,18 @@ class PlanningNode {
     private_node_.param("vehicle/id", vehicle_id_, std::string("vehicle_1"));
     visualizer_.Initialize(private_node_, scenario_.frame_id(),
                            configuration_.vehicle);
+    double playback_speed = 1.0;
+    double swept_area_resolution = 0.005;
+    private_node_.param("visualization/playback_speed", playback_speed, 1.0);
+    private_node_.param("visualization/swept_area_resolution",
+                        swept_area_resolution, 0.005);
+    if (!playback_.Initialize(private_node_, &visualizer_,
+                              configuration_.vehicle, playback_speed,
+                              swept_area_resolution, &error)) {
+      ROS_ERROR("Cannot initialize live trajectory visualization: %s",
+                error.c_str());
+      return false;
+    }
     command_client_ = private_node_.serviceClient<
         buffered_footprint_planner::SetObjectPose>(
         "/simulation/set_object_pose");
@@ -36,6 +56,8 @@ class PlanningNode {
     }
     lock_subscriber_ = private_node_.subscribe(
         "/simulation/start_locked", 1, &PlanningNode::LockCallback, this);
+    result_timer_ = private_node_.createTimer(
+        ros::Duration(0.05), &PlanningNode::ProcessPlanningEvents, this);
     ROS_INFO("Live planner ready; fixed goal=(%.3f, %.3f, %.3f rad)",
              scenario_.goal().x, scenario_.goal().y, scenario_.goal().yaw);
     return true;
@@ -92,10 +114,15 @@ class PlanningNode {
   }
 
   void LockCallback(const std_msgs::Bool::ConstPtr& message) {
+    if (!message->data) {
+      last_locked_ = false;
+      ++scene_generation_;
+      playback_.StopAndClear();
+      return;
+    }
     const bool rising_edge = message->data && !last_locked_;
     last_locked_ = message->data;
-    if (!rising_edge || planning_) return;
-    planning_ = true;
+    if (!rising_edge || planning_.exchange(true)) return;
     scene::SceneSnapshot snapshot;
     std::string error;
     if (!AcquireFrozenSnapshot(&snapshot, &error)) {
@@ -105,36 +132,85 @@ class PlanningNode {
       return;
     }
     visualizer_.QueueGoal(snapshot.goal);
-    planning_platform::PlanningPipeline pipeline(configuration_);
-    const auto result = pipeline.Run(snapshot, "live");
-    if (result.hybrid_succeeded) {
-      visualizer_.QueueHybridPath(result.hybrid_path);
-    }
-    if (result.success) {
-      visualizer_.QueueOptimizedTrajectory(result.optimization.trajectory);
-    }
     visualizer_.Trigger();
-    if (result.success) {
-      ROS_INFO("Live planning succeeded; results: %s",
-               result.result_directory.c_str());
-    } else {
-      ROS_ERROR("Live planning failed: %s; results: %s",
-                result.status.c_str(), result.result_directory.c_str());
+    if (planning_thread_.joinable()) planning_thread_.join();
+    const std::uint64_t generation = scene_generation_.load();
+    planning_thread_ = std::thread(
+        [this, snapshot = std::move(snapshot), generation]() mutable {
+          planning_platform::PlanningPipeline pipeline(configuration_);
+          auto result = std::make_shared<planning_platform::PlanningRunResult>(
+              pipeline.Run(
+                  snapshot, "live",
+                  [this, generation](const planning::HybridAStartResult& path,
+                                     double elapsed) {
+                    std::lock_guard<std::mutex> lock(event_mutex_);
+                    pending_hybrid_ =
+                        std::make_shared<planning::HybridAStartResult>(path);
+                    pending_hybrid_generation_ = generation;
+                    ROS_INFO("Hybrid A* completed after %.3f s; queued for "
+                             "immediate RViz publication", elapsed);
+                  }));
+          ReleaseScene();
+          {
+            std::lock_guard<std::mutex> lock(event_mutex_);
+            completed_result_ = std::move(result);
+            completed_generation_ = generation;
+          }
+          planning_ = false;
+        });
+  }
+
+  void ProcessPlanningEvents(const ros::TimerEvent&) {
+    std::shared_ptr<planning::HybridAStartResult> hybrid;
+    std::shared_ptr<planning_platform::PlanningRunResult> result;
+    std::uint64_t hybrid_generation = 0;
+    std::uint64_t result_generation = 0;
+    {
+      std::lock_guard<std::mutex> lock(event_mutex_);
+      hybrid = std::move(pending_hybrid_);
+      hybrid_generation = pending_hybrid_generation_;
+      result = std::move(completed_result_);
+      result_generation = completed_generation_;
     }
-    ReleaseScene();
-    planning_ = false;
+    const std::uint64_t current_generation = scene_generation_.load();
+    if (hybrid && hybrid_generation == current_generation) {
+      visualizer_.QueueHybridPath(*hybrid);
+      visualizer_.Trigger();
+    }
+    if (!result || result_generation != current_generation) return;
+    if (result->success) {
+      std::string error;
+      if (!playback_.Start(result->optimization.trajectory, &error)) {
+        ROS_ERROR("Live trajectory visualization disabled: %s", error.c_str());
+      }
+      ROS_INFO("Live planning succeeded; results: %s",
+               result->result_directory.c_str());
+    } else {
+      playback_.StopAndClear();
+      ROS_ERROR("Live planning failed: %s; results: %s",
+                result->status.c_str(), result->result_directory.c_str());
+    }
   }
 
   ros::NodeHandle private_node_;
   ScenarioManager scenario_;
   planning_platform::PlanningConfiguration configuration_;
   std::string vehicle_id_ = "vehicle_1";
-  bool planning_ = false;
+  std::atomic<bool> planning_{false};
   bool scene_locked_ = false;
   bool last_locked_ = false;
+  std::atomic<std::uint64_t> scene_generation_{0};
   visualization::SceneVisualizer visualizer_;
+  visualization::TrajectoryPlaybackVisualizer playback_;
   ros::ServiceClient command_client_;
   ros::Subscriber lock_subscriber_;
+  ros::Timer result_timer_;
+  std::thread planning_thread_;
+  std::mutex event_mutex_;
+  std::shared_ptr<planning::HybridAStartResult> pending_hybrid_;
+  std::shared_ptr<planning_platform::PlanningRunResult> completed_result_;
+  std::uint64_t pending_hybrid_generation_ = 0;
+  std::uint64_t completed_generation_ = 0;
 };
 
 }  // namespace

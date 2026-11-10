@@ -65,7 +65,8 @@ public:
   bool ShortestFeasibleRSP(const std::shared_ptr<Node3d> start_node,
                           const std::shared_ptr<Node3d> end_node,
                           const std::function<bool(const ReedSheppPath&)>& valid,
-                          std::shared_ptr<ReedSheppPath> optimal_path);
+                          std::shared_ptr<ReedSheppPath> optimal_path,
+                          const std::function<bool()>& should_stop = {});
 
 protected:
   // Generate all possible combination of movement primitives by Reed Shepp and

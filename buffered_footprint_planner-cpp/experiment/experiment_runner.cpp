@@ -1,6 +1,7 @@
 #include "experiment/experiment_runner.h"
 
 #include <filesystem>
+#include <utility>
 
 #include "scene/scene_storage.h"
 
@@ -12,7 +13,9 @@ ExperimentRunner::ExperimentRunner(
 
 bool ExperimentRunner::RunTask(
     const std::string& tasks_root, int task_id,
-    planning_platform::PlanningRunResult* result, std::string* error) const {
+    planning_platform::PlanningRunResult* result, std::string* error,
+    planning_platform::PlanningPipeline::HybridCompleteCallback
+        hybrid_complete) const {
   if (!result || task_id <= 0) {
     if (error) *error = "Task ID must be a positive integer";
     return false;
@@ -32,7 +35,7 @@ bool ExperimentRunner::RunTask(
   auto configuration = configuration_;
   configuration.planner.xy_bounds = snapshot.bounds;
   planning_platform::PlanningPipeline pipeline(std::move(configuration));
-  *result = pipeline.Run(snapshot, "offline");
+  *result = pipeline.Run(snapshot, "offline", std::move(hybrid_complete));
   return result->success;
 }
 

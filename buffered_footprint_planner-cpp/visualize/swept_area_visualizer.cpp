@@ -39,6 +39,11 @@ void SweptAreaVisualizer::Update(
 
 void SweptAreaVisualizer::Reset(
     const optimizer::TrajectoryNode& start_pose) {
+  Clear();
+  Update(start_pose);
+}
+
+void SweptAreaVisualizer::Clear() {
   if (published_chunk_count_ > 0) {
     VisualizationPlot::ClearMarkers(
         "trajectory_swept_area", 0,
@@ -50,7 +55,6 @@ void SweptAreaVisualizer::Reset(
   published_chunk_count_ = 0;
   raster_sample_count_ = 0;
   has_previous_pose_ = false;
-  Update(start_pose);
 }
 
 void SweptAreaVisualizer::AddInterpolatedSweep(

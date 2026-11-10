@@ -21,6 +21,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <memory>
 #include <queue>
 #include <string>
@@ -57,6 +58,8 @@ public:
   virtual ~HybridAStar() = default;
   bool Plan(double sx, double sy, double sphi, double ex, double ey, double ephi,
             HybridAStartResult* result);
+  bool timed_out() const { return timed_out_; }
+  double elapsed_seconds() const;
   bool TrajectoryPartition(const HybridAStartResult& result,
                            std::vector<HybridAStartResult>* partitioned_result);
 
@@ -80,6 +83,7 @@ private:
   bool GetResult(HybridAStartResult* result);
   bool GetTemporalProfile(HybridAStartResult* result);
   bool GenerateSpeedAcceleration(HybridAStartResult* result);
+  bool DeadlineExceeded();
 
 private:
   ParkingPlannerConfig planner_open_space_config_;
@@ -118,6 +122,13 @@ private:
   std::unordered_map<int64_t, std::shared_ptr<Node3d>> close_set_;
   std::unique_ptr<ReedShepp> reed_shepp_generator_;
   std::unique_ptr<GridSearch> grid_a_star_heuristic_generator_;
+  std::chrono::steady_clock::time_point search_begin_;
+  std::chrono::steady_clock::time_point search_deadline_;
+  bool timed_out_ = false;
+  static constexpr double kSearchTimeoutSeconds = 8.0;
+  // A single STL allocation/rehash cannot be preempted. Stop admitting new
+  // work slightly early so such an in-flight operation cannot cross 8.0 s.
+  static constexpr double kDeadlineGuardSeconds = 0.5;
 };
 
 }  // namespace planning
