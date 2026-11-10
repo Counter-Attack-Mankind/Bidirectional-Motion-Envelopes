@@ -64,12 +64,11 @@ HybridAStar::HybridAStar(const ParkingPlannerConfig &config,
 bool HybridAStar::AnalyticExpansion(const std::shared_ptr<Node3d>& current_node) {
   std::shared_ptr<ReedSheppPath> reeds_shepp_to_check =
       std::make_shared<ReedSheppPath>();
-  if (!reed_shepp_generator_->ShortestRSP(current_node, end_node_,
-                                          reeds_shepp_to_check)) {
-    return false;
-  }
-
-  if (!RSPCheck(reeds_shepp_to_check)) {
+  if (!reed_shepp_generator_->ShortestFeasibleRSP(
+          current_node, end_node_,
+          [this](const ReedSheppPath& path) {
+            return RSPCheck(std::make_shared<ReedSheppPath>(path));
+          }, reeds_shepp_to_check)) {
     return false;
   }
 
@@ -135,6 +134,11 @@ std::shared_ptr<Node3d> HybridAStar::LoadRSPinCS(
       XYbounds_, planner_open_space_config_);
   if (!reeds_shepp_to_end->gear.empty()) {
     end_node->SetDirec(reeds_shepp_to_end->gear.back());
+    std::vector<bool> edge_gears;
+    for (size_t i = 1; i < reeds_shepp_to_end->gear.size(); ++i) {
+      edge_gears.push_back(reeds_shepp_to_end->gear[i]);
+    }
+    end_node->SetEdgeGears(std::move(edge_gears));
   }
   end_node->SetPre(std::move(current_node));
   close_set_.emplace(end_node->GetIndex(), end_node);
@@ -172,11 +176,13 @@ std::shared_ptr<Node3d> HybridAStar::Next_node_generator(
   intermediate_y.push_back(last_y);
   intermediate_phi.push_back(last_phi);
   for (size_t i = 0; i < arc / step_size_; ++i) {
-    const double next_x = last_x + traveled_distance * std::cos(last_phi);
-    const double next_y = last_y + traveled_distance * std::sin(last_phi);
     const double next_phi = common::math::NormalizeAngle(
         last_phi +
         traveled_distance / vehicle_param_.wheel_base * std::tan(steering));
+    const double midpoint_phi = last_phi + 0.5 *
+        common::math::NormalizeAngle(next_phi - last_phi);
+    const double next_x = last_x + traveled_distance * std::cos(midpoint_phi);
+    const double next_y = last_y + traveled_distance * std::sin(midpoint_phi);
     intermediate_x.push_back(next_x);
     intermediate_y.push_back(next_y);
     intermediate_phi.push_back(next_phi);
@@ -189,6 +195,8 @@ std::shared_ptr<Node3d> HybridAStar::Next_node_generator(
                  planner_open_space_config_);
   next_node->SetPre(current_node);
   next_node->SetDirec(traveled_distance > 0.0);
+  next_node->SetEdgeGears(std::vector<bool>(intermediate_x.size() - 1,
+                                           traveled_distance > 0.0));
   next_node->SetSteer(steering);
   return next_node;
 }
@@ -233,6 +241,7 @@ bool HybridAStar::GetResult(HybridAStartResult* result) {
   std::vector<double> hybrid_a_x;
   std::vector<double> hybrid_a_y;
   std::vector<double> hybrid_a_phi;
+  std::vector<bool> hybrid_a_gear;
   while (current_node->GetPreNode() != nullptr) {
     std::vector<double> x = current_node->GetXs();
     std::vector<double> y = current_node->GetYs();
@@ -245,6 +254,10 @@ bool HybridAStar::GetResult(HybridAStartResult* result) {
       printf("states sizes are not equal");
       return false;
     }
+    const auto& edge_gears = current_node->GetEdgeGears();
+    if (edge_gears.size() + 1 != x.size()) {
+      return false;
+    }
     std::reverse(x.begin(), x.end());
     std::reverse(y.begin(), y.end());
     std::reverse(phi.begin(), phi.end());
@@ -254,6 +267,8 @@ bool HybridAStar::GetResult(HybridAStartResult* result) {
     hybrid_a_x.insert(hybrid_a_x.end(), x.begin(), x.end());
     hybrid_a_y.insert(hybrid_a_y.end(), y.begin(), y.end());
     hybrid_a_phi.insert(hybrid_a_phi.end(), phi.begin(), phi.end());
+    hybrid_a_gear.insert(hybrid_a_gear.end(), edge_gears.rbegin(),
+                         edge_gears.rend());
     current_node = current_node->GetPreNode();
   }
   hybrid_a_x.push_back(current_node->GetX());
@@ -262,20 +277,12 @@ bool HybridAStar::GetResult(HybridAStartResult* result) {
   std::reverse(hybrid_a_x.begin(), hybrid_a_x.end());
   std::reverse(hybrid_a_y.begin(), hybrid_a_y.end());
   std::reverse(hybrid_a_phi.begin(), hybrid_a_phi.end());
+  std::reverse(hybrid_a_gear.begin(), hybrid_a_gear.end());
   (*result).x = hybrid_a_x;
   (*result).y = hybrid_a_y;
   (*result).phi = hybrid_a_phi;
-  result->gear.clear();
-  result->gear.reserve(result->x.size());
-  for (size_t i = 0; i + 1 < result->x.size(); ++i) {
-    const double dx = result->x[i + 1] - result->x[i];
-    const double dy = result->y[i + 1] - result->y[i];
-    const double projection = dx * std::cos(result->phi[i]) +
-                              dy * std::sin(result->phi[i]);
-    result->gear.push_back(std::abs(projection) < 1e-9 && !result->gear.empty()
-                               ? result->gear.back()
-                               : projection >= 0.0);
-  }
+  if (hybrid_a_gear.size() + 1 != result->x.size()) return false;
+  result->gear = std::move(hybrid_a_gear);
   result->gear.push_back(result->gear.empty() ? true : result->gear.back());
 
   if (!GetTemporalProfile(result)) {
@@ -331,14 +338,12 @@ bool HybridAStar::GenerateSpeedAcceleration(HybridAStartResult* result) {
 
   // load steering from phi
   for (size_t i = 0; i + 1 < x_size; ++i) {
-    double discrete_steer = common::math::NormalizeAngle(
-                                result->phi[i + 1] - result->phi[i]) *
-                            vehicle_param_.wheel_base / step_size_;
-    if (result->gear[i]) {
-      discrete_steer = std::atan(discrete_steer);
-    } else {
-      discrete_steer = std::atan(-discrete_steer);
-    }
+    const double distance = std::hypot(result->x[i + 1] - result->x[i],
+                                       result->y[i + 1] - result->y[i]);
+    const double signed_distance = result->gear[i] ? distance : -distance;
+    const double discrete_steer = distance < 1e-12 ? 0.0 : std::atan(
+        common::math::NormalizeAngle(result->phi[i + 1] - result->phi[i]) *
+        vehicle_param_.wheel_base / signed_distance);
     result->steer.push_back(discrete_steer);
   }
   return true;
@@ -490,8 +495,11 @@ bool HybridAStar::Plan(
 
     // take out the lowest cost neighboring node
     const int64_t current_id = open_pq_.top().first;
+    const double queued_cost = open_pq_.top().second;
     open_pq_.pop();
     std::shared_ptr<Node3d> current_node = open_set_[current_id];
+    if (close_set_.count(current_id) ||
+        queued_cost > current_node->GetCost() + 1e-12) continue;
 
     // OPTIMIZATION: Check distance to goal - try analytic expansion more frequently when close
     double dx = current_node->GetX() - end_node_->GetX();
@@ -520,10 +528,13 @@ bool HybridAStar::Plan(
       if (!ValidityCheck(next_node)) {
         continue;
       }
-      if (open_set_.find(next_node->GetIndex()) == open_set_.end()) {
-        explored_node_num++;
-        CalculateNodeCost(current_node, next_node);
+      CalculateNodeCost(current_node, next_node);
+      const auto existing = open_set_.find(next_node->GetIndex());
+      if (existing == open_set_.end() ||
+          next_node->GetCost() + 1e-12 < existing->second->GetCost()) {
+        if (existing == open_set_.end()) ++explored_node_num;
         open_set_.emplace(next_node->GetIndex(), next_node);
+        if (existing != open_set_.end()) existing->second = next_node;
         open_pq_.emplace(next_node->GetIndex(), next_node->GetCost());
 
         // 记录搜索节点

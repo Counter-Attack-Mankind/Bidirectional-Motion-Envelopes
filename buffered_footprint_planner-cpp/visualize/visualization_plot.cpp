@@ -202,6 +202,60 @@ void VisualizationPlot::PlotPoints(const Vector &xs, const Vector &ys, const Col
   mutex_.unlock();
 }
 
+void VisualizationPlot::PlotSpheres(const Vector &xs, const Vector &ys,
+                                    const Color &color, double diameter,
+                                    int id, const std::string &ns, double z) {
+  assert(xs.size() == ys.size());
+  visualization_msgs::Marker msg;
+  msg.header.frame_id = frame_;
+  msg.header.stamp = ros::Time();
+  msg.ns = ns;
+  msg.id = id >= 0 ? id : arr_.markers.size();
+  msg.action = xs.empty() ? visualization_msgs::Marker::DELETE
+                          : visualization_msgs::Marker::ADD;
+  msg.type = visualization_msgs::Marker::SPHERE_LIST;
+  msg.pose.orientation.w = 1.0;
+  msg.scale.x = msg.scale.y = msg.scale.z = diameter;
+  msg.color = color.toColorRGBA();
+  for (std::size_t i = 0; i < xs.size(); ++i) {
+    geometry_msgs::Point point;
+    point.x = xs[i];
+    point.y = ys[i];
+    point.z = z;
+    msg.points.push_back(point);
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  arr_.markers.push_back(msg);
+}
+
+void VisualizationPlot::PlotGridCells(const Vector &xs, const Vector &ys,
+                                      double resolution, const Color &color,
+                                      int id, const std::string &ns, double z,
+                                      double height) {
+  assert(xs.size() == ys.size());
+  visualization_msgs::Marker msg;
+  msg.header.frame_id = frame_;
+  msg.header.stamp = ros::Time();
+  msg.ns = ns;
+  msg.id = id;
+  msg.action = xs.empty() ? visualization_msgs::Marker::DELETE
+                          : visualization_msgs::Marker::ADD;
+  msg.type = visualization_msgs::Marker::CUBE_LIST;
+  msg.pose.orientation.w = 1.0;
+  msg.scale.x = msg.scale.y = resolution;
+  msg.scale.z = height;
+  msg.color = color.toColorRGBA();
+  for (std::size_t i = 0; i < xs.size(); ++i) {
+    geometry_msgs::Point point;
+    point.x = xs[i];
+    point.y = ys[i];
+    point.z = z;
+    msg.points.push_back(point);
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  arr_.markers.push_back(msg);
+}
+
 void VisualizationPlot::PlotArrow(double start_x, double start_y,
                                   double end_x, double end_y, Color color,
                                   int id, const std::string &ns,

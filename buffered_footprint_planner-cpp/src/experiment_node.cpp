@@ -7,7 +7,10 @@
 #include "experiment/experiment_runner.h"
 #include "planning/planning_config_loader.h"
 #include "scene/scene_storage.h"
+#include "visualize/footprint_visualizer.h"
 #include "visualize/scene_visualizer.h"
+#include "visualize/swept_area_visualizer.h"
+#include "visualize/trajectory_player.h"
 
 int main(int argc, char** argv) {
   ros::init(argc, argv, "buffered_footprint_experiment");
@@ -47,10 +50,6 @@ int main(int argc, char** argv) {
   if (result.hybrid_succeeded) {
     visualizer.QueueHybridPath(result.hybrid_path);
   }
-  if (result.success) {
-    visualizer.QueueOptimizedTrajectory(result.optimization.trajectory);
-  }
-  visualizer.Trigger();
   if (!success) {
     const std::string message = result.status.empty() ? error : result.status;
     ROS_ERROR("Offline experiment failed: %s; results: %s",
@@ -59,6 +58,58 @@ int main(int argc, char** argv) {
     ROS_INFO("Offline experiment succeeded; results: %s",
              result.result_directory.c_str());
   }
+
+  double playback_speed = 1.0;
+  double swept_area_resolution = 0.005;
+  private_node.param("visualization/playback_speed", playback_speed, 1.0);
+  private_node.param("visualization/swept_area_resolution",
+                     swept_area_resolution, 0.005);
+  visualization::TrajectoryPlayer player;
+  visualization::FootprintVisualizer footprint_visualizer;
+  visualization::SweptAreaVisualizer swept_area_visualizer;
+  bool playback_started = false;
+  std::size_t completed_cycles = 0;
+  if (result.success) {
+    if (!swept_area_visualizer.Initialize(
+            configuration.vehicle, swept_area_resolution, &error)) {
+      ROS_ERROR("Cannot initialize swept-area visualization: %s",
+                error.c_str());
+    } else {
+      playback_started = player.Start(
+          private_node, result.optimization.trajectory, playback_speed,
+          [&](const visualization::PlaybackState& state) {
+            if (state.new_cycle) {
+              ROS_INFO("Playback cycle %zu completed: swept cells=%zu, "
+                       "adaptive body samples=%zu",
+                       ++completed_cycles, swept_area_visualizer.cell_count(),
+                       swept_area_visualizer.raster_sample_count());
+              footprint_visualizer.Clear();
+              swept_area_visualizer.Reset(state.pose);
+            } else {
+              swept_area_visualizer.Update(state.pose);
+            }
+            footprint_visualizer.Update(
+                result.optimization.trajectory.intervals[state.interval_index],
+                state.interval_index, state.new_cycle);
+            visualizer.QueuePlaybackVehicle(state);
+            swept_area_visualizer.QueueDirtyMarkers();
+            visualizer.Trigger();
+          },
+          &error);
+      if (!playback_started) {
+        ROS_ERROR("Optimized trajectory visualization disabled: %s",
+                  error.c_str());
+      }
+    }
+  }
+  if (playback_started) {
+    visualizer.QueueOptimizedTrajectory(result.optimization.trajectory);
+    visualizer.QueueOptimizedConfigurationPoints(
+        result.optimization.trajectory);
+    ROS_INFO("Trajectory playback started at %.3fx, swept resolution %.4f m",
+             playback_speed, swept_area_resolution);
+  }
+  visualizer.Trigger();
   ROS_INFO("Experiment visualization remains active; press Ctrl+C to exit");
 
   ros::Timer republish_timer = private_node.createTimer(
@@ -68,9 +119,11 @@ int main(int argc, char** argv) {
         if (result.hybrid_succeeded) {
           visualizer.QueueHybridPath(result.hybrid_path);
         }
-        if (result.success) {
+        if (playback_started) {
           visualizer.QueueOptimizedTrajectory(
               result.optimization.trajectory, false);
+          visualizer.QueueOptimizedConfigurationPoints(
+              result.optimization.trajectory);
         }
         visualizer.Trigger();
       });

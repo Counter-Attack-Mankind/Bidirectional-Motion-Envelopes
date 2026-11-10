@@ -21,6 +21,7 @@
 #pragma once
 
 #include <limits>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -60,6 +61,11 @@ public:
   bool ShortestRSP(const std::shared_ptr<Node3d> start_node,
                    const std::shared_ptr<Node3d> end_node,
                    std::shared_ptr<ReedSheppPath> optimal_path);
+  // Test candidates in length order; collision is evaluated on each sampled path.
+  bool ShortestFeasibleRSP(const std::shared_ptr<Node3d> start_node,
+                          const std::shared_ptr<Node3d> end_node,
+                          const std::function<bool(const ReedSheppPath&)>& valid,
+                          std::shared_ptr<ReedSheppPath> optimal_path);
 
 protected:
   // Generate all possible combination of movement primitives by Reed Shepp and

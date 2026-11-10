@@ -1,6 +1,8 @@
 <launch>
   <arg name="task"/>
   <arg name="launch_rviz" default="true"/>
+  <arg name="playback_speed" default="1.0"/>
+  <arg name="swept_area_resolution" default="0.005"/>
   <arg name="tasks_root"
        default="$(find buffered_footprint_planner)/environment/tasks"/>
   <arg name="results_root"
@@ -13,6 +15,9 @@
     <param name="task" value="$(arg task)"/>
     <param name="tasks_root" value="$(arg tasks_root)"/>
     <param name="results_directory" value="$(arg results_root)"/>
+    <param name="visualization/playback_speed" value="$(arg playback_speed)"/>
+    <param name="visualization/swept_area_resolution"
+           value="$(arg swept_area_resolution)"/>
   </node>
 
   <node if="$(arg launch_rviz)" pkg="rviz" type="rviz" name="rviz"

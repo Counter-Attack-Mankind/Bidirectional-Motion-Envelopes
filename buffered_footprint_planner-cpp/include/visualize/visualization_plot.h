@@ -46,6 +46,14 @@ void PlotTrajectory(const Vector &xs, const Vector &ys, const Vector &vs, double
 void PlotPoints(const Vector &xs, const Vector &ys, const Color &color = Color::White, double width = 0.1,
                 int id = -1, const std::string &ns = "", double z = 0.04);
 
+void PlotSpheres(const Vector &xs, const Vector &ys,
+                 const Color &color = Color::White, double diameter = 0.012,
+                 int id = -1, const std::string &ns = "", double z = 0.04);
+
+void PlotGridCells(const Vector &xs, const Vector &ys, double resolution,
+                   const Color &color, int id, const std::string &ns,
+                   double z = 0.008, double height = 0.01);
+
 void PlotArrow(double start_x, double start_y, double end_x, double end_y,
                Color color = Color::White, int id = -1,
                const std::string &ns = "", double shaft_diameter = 0.008,

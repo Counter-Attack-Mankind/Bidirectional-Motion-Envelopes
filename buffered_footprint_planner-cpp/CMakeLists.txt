@@ -25,7 +25,8 @@ generate_messages()
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES common_math common_util hybrid_astar environment visualization_plot
-            scene_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
+            scene_visualizer trajectory_player footprint_visualizer
+            swept_area_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
             planning_config experiment_runner
   CATKIN_DEPENDS geometry_msgs message_runtime roscpp std_msgs tf2
                  tf2_geometry_msgs visualization_msgs
@@ -79,6 +80,16 @@ add_library(scene_visualizer visualize/scene_visualizer.cpp)
 target_link_libraries(scene_visualizer visualization_plot hybrid_astar scene_core
                       ${catkin_LIBRARIES})
 
+add_library(trajectory_player visualize/trajectory_player.cpp)
+target_link_libraries(trajectory_player common_math ${catkin_LIBRARIES})
+
+add_library(footprint_visualizer visualize/footprint_visualizer.cpp)
+target_link_libraries(footprint_visualizer visualization_plot ${catkin_LIBRARIES})
+
+add_library(swept_area_visualizer visualize/swept_area_visualizer.cpp)
+target_link_libraries(swept_area_visualizer visualization_plot common_math
+                      ${catkin_LIBRARIES})
+
 add_library(footprint_optimizer
   optimizer/embodied_footprint.cpp
   optimizer/initial_guess.cpp
@@ -116,7 +127,9 @@ add_dependencies(scene_recorder_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catki
 
 add_executable(experiment_node src/experiment_node.cpp)
 target_link_libraries(experiment_node experiment_runner planning_pipeline
-                      scene_core scene_visualizer ${catkin_LIBRARIES})
+                      scene_core scene_visualizer trajectory_player
+                      footprint_visualizer swept_area_visualizer
+                      ${catkin_LIBRARIES})
 add_dependencies(experiment_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_executable(keyboard_scene_editor simulation/keyboard_scene_editor.cpp)
@@ -124,7 +137,8 @@ target_link_libraries(keyboard_scene_editor ${catkin_LIBRARIES})
 add_dependencies(keyboard_scene_editor ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 install(TARGETS common_math common_util hybrid_astar environment visualization_plot
-                scene_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
+                scene_visualizer trajectory_player footprint_visualizer
+                swept_area_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
                 planning_config experiment_runner simulation_node planning_node scene_recorder_node
                 experiment_node keyboard_scene_editor
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

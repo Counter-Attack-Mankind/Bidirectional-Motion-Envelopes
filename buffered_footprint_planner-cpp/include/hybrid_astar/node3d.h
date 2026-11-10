@@ -19,6 +19,7 @@
  */
 
 #pragma once
+#include <cstdint>
 
 #include <memory>
 #include <string>
@@ -64,6 +65,7 @@ public:
   const std::vector<double>& GetXs() const { return traversed_x_; }
   const std::vector<double>& GetYs() const { return traversed_y_; }
   const std::vector<double>& GetPhis() const { return traversed_phi_; }
+  const std::vector<bool>& GetEdgeGears() const { return edge_gears_; }
   void SetPre(std::shared_ptr<Node3d> pre_node) { pre_node_ = std::move(pre_node); }
   void SetDirec(bool direction) {
     direction_ = direction;
@@ -72,6 +74,7 @@ public:
   void SetTrajCost(double cost) { traj_cost_ = cost; }
   void SetHeuCost(double cost) { heuristic_cost_ = cost; }
   void SetSteer(double steering) { steering_ = steering; }
+  void SetEdgeGears(std::vector<bool> gears) { edge_gears_ = std::move(gears); }
 
 private:
   static int64_t ComputeStringIndex(int x_grid, int y_grid, int phi_grid,
@@ -85,6 +88,8 @@ private:
   std::vector<double> traversed_x_;
   std::vector<double> traversed_y_;
   std::vector<double> traversed_phi_;
+  // One direction for each traversed edge, including an analytic cusp.
+  std::vector<bool> edge_gears_;
   int x_grid_ = 0;
   int y_grid_ = 0;
   int phi_grid_ = 0;

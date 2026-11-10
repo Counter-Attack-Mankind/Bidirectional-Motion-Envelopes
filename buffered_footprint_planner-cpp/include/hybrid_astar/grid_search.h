@@ -19,6 +19,7 @@
  */
 
 #pragma once
+#include <cstdint>
 
 #include <limits>
 #include <memory>
@@ -133,7 +134,7 @@ private:
   struct cmp {
     bool operator()(const std::pair<int64_t, double>& left,
                     const std::pair<int64_t, double>& right) const {
-      return left.second >= right.second;
+      return left.second > right.second;
     }
   };
   std::unordered_map<int64_t, std::shared_ptr<Node2d>> dp_map_;

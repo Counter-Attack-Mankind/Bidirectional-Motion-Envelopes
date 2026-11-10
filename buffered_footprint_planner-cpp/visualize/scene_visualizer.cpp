@@ -1,6 +1,8 @@
 #include "visualize/scene_visualizer.h"
 
 #include <cmath>
+#include <iomanip>
+#include <sstream>
 #include <vector>
 
 #include "common/math/polygon2d.h"
@@ -116,6 +118,54 @@ void SceneVisualizer::QueueOptimizedTrajectory(
       forward = trajectory.intervals[i + 1].gear;
     }
   }
+}
+
+void SceneVisualizer::QueueOptimizedConfigurationPoints(
+    const optimizer::Trajectory& trajectory) const {
+  std::vector<double> x;
+  std::vector<double> y;
+  x.reserve(trajectory.nodes.size());
+  y.reserve(trajectory.nodes.size());
+  for (const auto& node : trajectory.nodes) {
+    x.push_back(node.x);
+    y.push_back(node.y);
+  }
+  VisualizationPlot::PlotSpheres(
+      x, y, Color::Red, 0.012, 0,
+      "trajectory_optimized_configurations", 0.05);
+}
+
+void SceneVisualizer::QueuePlaybackVehicle(const PlaybackState& state) const {
+  const auto& pose = state.pose;
+  const auto box = vehicle_.GenerateBox(
+      common::math::Pose(pose.x, pose.y, pose.theta));
+  const Color color = state.gear ? Color::Blue : Color::Red;
+  VisualizationPlot::PlotPolygon(
+      common::math::Polygon2d(box), 0.018, color, 0,
+      "trajectory_vehicle_body");
+  VisualizationPlot::PlotPoints(
+      {pose.x}, {pose.y}, color, 0.045, 0,
+      "trajectory_vehicle_rear_axle", 0.055);
+  const double arrow_length =
+      vehicle_.wheel_base + vehicle_.front_hang + 0.04;
+  VisualizationPlot::PlotArrow(
+      pose.x, pose.y,
+      pose.x + arrow_length * std::cos(pose.theta),
+      pose.y + arrow_length * std::sin(pose.theta), color, 0,
+      "trajectory_vehicle_heading", 0.012, 0.032, 0.04, 0.06);
+
+  std::ostringstream status;
+  status << std::fixed << std::setprecision(3)
+         << "t=" << state.trajectory_time << "/" << state.total_time
+         << " s  interval=" << (state.interval_index + 1)
+         << "/" << state.interval_count
+         << "\nv=" << pose.v << " m/s  phi=" << pose.phy
+         << " rad  w=" << pose.w << " rad/s  "
+         << (state.gear ? "FORWARD" : "REVERSE");
+  if (state.paused_at_end) status << "  END PAUSE";
+  VisualizationPlot::PlotText(
+      pose.x, box.max_y() + 0.18, status.str(), 0.065, color, 0,
+      "trajectory_playback_status");
 }
 
 void SceneVisualizer::ClearPlanningResults() const {

@@ -20,6 +20,9 @@
 
 #include "hybrid_astar/reeds_shepp_path.h"
 
+#include <algorithm>
+#include <numeric>
+
 namespace planning {
 
 ReedShepp::ReedShepp(const VehicleParameter& vehicle_param,
@@ -56,58 +59,41 @@ std::pair<double, double> ReedShepp::calc_tau_omega(const double u,
 bool ReedShepp::ShortestRSP(const std::shared_ptr<Node3d> start_node,
                             const std::shared_ptr<Node3d> end_node,
                             std::shared_ptr<ReedSheppPath> optimal_path) {
+  return ShortestFeasibleRSP(start_node, end_node,
+                            [](const ReedSheppPath&) { return true; },
+                            optimal_path);
+}
+
+bool ReedShepp::ShortestFeasibleRSP(
+    const std::shared_ptr<Node3d> start_node,
+    const std::shared_ptr<Node3d> end_node,
+    const std::function<bool(const ReedSheppPath&)>& valid,
+    std::shared_ptr<ReedSheppPath> optimal_path) {
   std::vector<ReedSheppPath> all_possible_paths;
   if (!GenerateRSPs(start_node, end_node, &all_possible_paths)) {
     return false;
   }
-
-  double optimal_path_length = std::numeric_limits<double>::infinity();
-  int optimal_path_index = -1;
-  size_t paths_size = all_possible_paths.size();
-  for (size_t i = 0; i < paths_size; ++i) {
-    if (all_possible_paths.at(i).total_length > 0 &&
-        all_possible_paths.at(i).total_length < optimal_path_length) {
-      optimal_path_index = i;
-      optimal_path_length = all_possible_paths.at(i).total_length;
+  std::vector<size_t> order(all_possible_paths.size());
+  std::iota(order.begin(), order.end(), 0);
+  std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+    return all_possible_paths[a].total_length < all_possible_paths[b].total_length;
+  });
+  for (size_t index : order) {
+    auto& path = all_possible_paths[index];
+    if (path.total_length <= 0.0 ||
+        !GenerateLocalConfigurations(start_node, end_node, &path) ||
+        path.x.empty() ||
+        std::hypot(path.x.back() - end_node->GetX(),
+                   path.y.back() - end_node->GetY()) > 1e-3 ||
+        std::abs(common::math::NormalizeAngle(path.phi.back() -
+                                              end_node->GetPhi())) > 1e-3 ||
+        !valid(path)) {
+      continue;
     }
+    *optimal_path = std::move(path);
+    return true;
   }
-
-  if(optimal_path_index < 0) {
-    return false;
-  }
-
-//  if(all_possible_paths[optimal_path_index].total_length > 10000.0) {
-//    // filter out incorrect RSP
-//    return false;
-//  }
-
-  if (!GenerateLocalConfigurations(start_node, end_node,
-                                   &(all_possible_paths[optimal_path_index]))) {
-    return false;
-  }
-
-  if (std::abs(all_possible_paths[optimal_path_index].x.back() -
-               end_node->GetX()) > 1e-3 ||
-      std::abs(all_possible_paths[optimal_path_index].y.back() -
-               end_node->GetY()) > 1e-3 ||
-      std::abs(all_possible_paths[optimal_path_index].phi.back() -
-               end_node->GetPhi()) > 1e-3) {
-    for (size_t i = 0;
-         i < all_possible_paths[optimal_path_index].segs_types.size(); ++i) {
-    }
-    return false;
-  }
-  (*optimal_path).x = all_possible_paths[optimal_path_index].x;
-  (*optimal_path).y = all_possible_paths[optimal_path_index].y;
-  (*optimal_path).phi = all_possible_paths[optimal_path_index].phi;
-  (*optimal_path).gear = all_possible_paths[optimal_path_index].gear;
-  (*optimal_path).total_length =
-      all_possible_paths[optimal_path_index].total_length;
-  (*optimal_path).segs_types =
-      all_possible_paths[optimal_path_index].segs_types;
-  (*optimal_path).segs_lengths =
-      all_possible_paths[optimal_path_index].segs_lengths;
-  return true;
+  return false;
 }
 
 bool ReedShepp::GenerateRSPs(const std::shared_ptr<Node3d> start_node,
@@ -916,65 +902,44 @@ bool ReedShepp::SetRSP(const int size, const double* lengths, const char* types,
 bool ReedShepp::GenerateLocalConfigurations(
     const std::shared_ptr<Node3d> start_node,
     const std::shared_ptr<Node3d> end_node, ReedSheppPath* shortest_path) {
-  double step_scaled =
-      planner_open_space_config_.step_size * max_kappa_;
-
-  size_t point_num = static_cast<size_t>(
-      std::floor(shortest_path->total_length / step_scaled +
-                 static_cast<double>(shortest_path->segs_lengths.size()) + 4));
-  std::vector<double> px(point_num, 0.0);
-  std::vector<double> py(point_num, 0.0);
-  std::vector<double> pphi(point_num, 0.0);
-  std::vector<bool> pgear(point_num, true);
-  int index = 1;
-  double d = 0.0;
-  double pd = 0.0;
-  double ll = 0.0;
-
-  if (shortest_path->segs_lengths.at(0) > 0.0) {
-    pgear.at(0) = true;
-    d = step_scaled;
-  } else {
-    pgear.at(0) = false;
-    d = -step_scaled;
-  }
-  pd = d;
+  const double step_scaled = planner_open_space_config_.step_size * max_kappa_;
+  if (!(step_scaled > 0.0) || !(max_kappa_ > 0.0)) return false;
+  double x = 0.0;
+  double y = 0.0;
+  double phi = 0.0;
+  std::vector<double> px{0.0};
+  std::vector<double> py{0.0};
+  std::vector<double> pphi{0.0};
+  std::vector<bool> pgear;
   for (size_t i = 0; i < shortest_path->segs_types.size(); ++i) {
-    char m = shortest_path->segs_types.at(i);
-    double l = shortest_path->segs_lengths.at(i);
-    if (l > 0.0) {
-      d = step_scaled;
-    } else {
-      d = -step_scaled;
+    const double length = shortest_path->segs_lengths[i];
+    if (std::abs(length) < 1e-12) continue;
+    const char type = shortest_path->segs_types[i];
+    const size_t count = static_cast<size_t>(std::ceil(std::abs(length) /
+                                                     step_scaled));
+    const double ds = length / static_cast<double>(count);
+    for (size_t j = 0; j < count; ++j) {
+      const double curvature = type == 'L' ? 1.0 :
+                               type == 'R' ? -1.0 : 0.0;
+      const double next_phi = phi + curvature * ds;
+      if (curvature == 0.0) {
+        x += ds * std::cos(phi) / max_kappa_;
+        y += ds * std::sin(phi) / max_kappa_;
+      } else {
+        x += (std::sin(next_phi) - std::sin(phi)) /
+             (curvature * max_kappa_);
+        y += (std::cos(phi) - std::cos(next_phi)) /
+             (curvature * max_kappa_);
+      }
+      phi = next_phi;
+      px.push_back(x);
+      py.push_back(y);
+      pphi.push_back(phi);
+      pgear.push_back(ds > 0.0);
     }
-    double ox = px.at(index);
-    double oy = py.at(index);
-    double ophi = pphi.at(index);
-    index--;
-    if (i >= 1 && shortest_path->segs_lengths.at(i - 1) *
-                  shortest_path->segs_lengths.at(i) >
-                  0) {
-      pd = -d - ll;
-    } else {
-      pd = d - ll;
-    }
-    while (std::abs(pd) <= std::abs(l)) {
-      index++;
-      Interpolation(index, pd, m, ox, oy, ophi, &px, &py, &pphi, &pgear);
-      pd += d;
-    }
-    ll = l - pd - d;
-    index++;
-    Interpolation(index, l, m, ox, oy, ophi, &px, &py, &pphi, &pgear);
   }
-  double epsilon = 1e-15;
-  while (std::fabs(px.back()) < epsilon && std::fabs(py.back()) < epsilon &&
-         std::fabs(pphi.back()) < epsilon && pgear.back()) {
-    px.pop_back();
-    py.pop_back();
-    pphi.pop_back();
-    pgear.pop_back();
-  }
+  if (pgear.empty()) return false;
+  pgear.insert(pgear.begin(), pgear.front());
   for (size_t i = 0; i < px.size(); ++i) {
     shortest_path->x.push_back(std::cos(-start_node->GetPhi()) * px.at(i) +
                                std::sin(-start_node->GetPhi()) * py.at(i) +

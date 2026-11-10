@@ -10,6 +10,7 @@
 #include "hybrid_astar/vehicle_parameter.h"
 #include "optimizer/trajectory.h"
 #include "scene/scene_snapshot.h"
+#include "visualize/trajectory_player.h"
 
 namespace visualization {
 
@@ -33,6 +34,9 @@ class SceneVisualizer {
   void QueueHybridPath(const planning::HybridAStartResult& path) const;
   void QueueOptimizedTrajectory(const optimizer::Trajectory& trajectory,
                                 bool clear_existing = true) const;
+  void QueueOptimizedConfigurationPoints(
+      const optimizer::Trajectory& trajectory) const;
+  void QueuePlaybackVehicle(const PlaybackState& state) const;
 
   void ClearPlanningResults() const;
   void Trigger() const;

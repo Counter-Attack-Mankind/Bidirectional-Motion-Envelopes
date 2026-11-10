@@ -123,8 +123,11 @@ bool GridSearch::GenerateDpMap(
   size_t explored_node_num = 0;
   while (!open_pq.empty()) {
     const int64_t current_id = open_pq.top().first;
+    const double queued_cost = open_pq.top().second;
     open_pq.pop();
     std::shared_ptr<Node2d> current_node = open_set[current_id];
+    if (dp_map_.count(current_id) ||
+        queued_cost > current_node->GetCost() + 1e-12) continue;
     dp_map_.emplace(current_node->GetIndex(), current_node);
     std::vector<std::shared_ptr<Node2d>> next_nodes =
         std::move(GenerateNextNodes(current_node));
@@ -140,11 +143,11 @@ bool GridSearch::GenerateDpMap(
         next_node->SetPreNode(current_node);
         open_set.emplace(next_node->GetIndex(), next_node);
         open_pq.emplace(next_node->GetIndex(), next_node->GetCost());
-      } else {
-        if (open_set[next_node->GetIndex()]->GetCost() > next_node->GetCost()) {
-          open_set[next_node->GetIndex()]->SetCost(next_node->GetCost());
-          open_set[next_node->GetIndex()]->SetPreNode(current_node);
-        }
+      } else if (open_set[next_node->GetIndex()]->GetCost() >
+                 next_node->GetCost() + 1e-12) {
+        next_node->SetPreNode(current_node);
+        open_set[next_node->GetIndex()] = next_node;
+        open_pq.emplace(next_node->GetIndex(), next_node->GetCost());
       }
     }
   }
