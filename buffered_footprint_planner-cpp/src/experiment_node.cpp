@@ -42,8 +42,18 @@ int main(int argc, char** argv) {
   visualization::SceneVisualizer visualizer;
   visualizer.Initialize(private_node, snapshot.frame_id,
                         configuration.vehicle);
-  visualizer.QueueScene(snapshot);
-  visualizer.Trigger();
+
+  std::mutex search_progress_mutex;
+  std::mutex visualization_mutex;
+  std::shared_ptr<planning::HybridSearchProgress> pending_search_progress;
+  std::shared_ptr<planning::HybridSearchProgress> latest_search_progress;
+  std::shared_ptr<planning::HybridAStartResult> completed_hybrid_path;
+  bool search_finished = false;
+  {
+    std::lock_guard<std::mutex> visualization_lock(visualization_mutex);
+    visualizer.QueueScene(snapshot);
+    visualizer.Trigger();
+  }
 
   // Service visualization timers and deliver the Hybrid stage marker while
   // the main thread continues through initial-guess construction and IPOPT.
@@ -53,10 +63,28 @@ int main(int argc, char** argv) {
   bool show_hybrid_search = true;
   private_node.param("visualization/show_hybrid_search",
                      show_hybrid_search, true);
-  std::mutex search_progress_mutex;
-  std::mutex visualization_mutex;
-  std::shared_ptr<planning::HybridSearchProgress> pending_search_progress;
-  bool search_finished = false;
+  // Keep the latched MarkerArray useful for RViz instances that connect after
+  // the first publication. Once Hybrid A* succeeds, include its final path in
+  // the same batch while initial-guess construction and IPOPT continue.
+  ros::Timer scene_republish_timer = private_node.createTimer(
+      ros::Duration(1.0),
+      [&](const ros::TimerEvent&) {
+        std::shared_ptr<planning::HybridAStartResult> hybrid_path;
+        std::shared_ptr<planning::HybridSearchProgress> search_progress;
+        {
+          std::lock_guard<std::mutex> lock(search_progress_mutex);
+          hybrid_path = completed_hybrid_path;
+          search_progress = latest_search_progress;
+        }
+        std::lock_guard<std::mutex> visualization_lock(visualization_mutex);
+        visualizer.QueueScene(snapshot);
+        if (hybrid_path) {
+          visualizer.QueueHybridPath(*hybrid_path);
+        } else if (search_progress) {
+          visualizer.QueueHybridSearch(*search_progress);
+        }
+        visualizer.Trigger();
+      });
   ros::Timer search_progress_timer;
   if (show_hybrid_search) {
     search_progress_timer = private_node.createTimer(
@@ -74,6 +102,10 @@ int main(int argc, char** argv) {
             std::lock_guard<std::mutex> lock(search_progress_mutex);
             if (search_finished) return;
           }
+          // Publish static and dynamic markers atomically as one MarkerArray,
+          // so a late RViz subscriber never receives search data without the
+          // map, obstacles, start, and goal.
+          visualizer.QueueScene(snapshot);
           visualizer.QueueHybridSearch(*progress);
           visualizer.Trigger();
         });
@@ -88,8 +120,11 @@ int main(int argc, char** argv) {
           std::lock_guard<std::mutex> lock(search_progress_mutex);
           search_finished = true;
           pending_search_progress.reset();
+          completed_hybrid_path =
+              std::make_shared<planning::HybridAStartResult>(path);
         }
         std::lock_guard<std::mutex> visualization_lock(visualization_mutex);
+        visualizer.QueueScene(snapshot);
         visualizer.QueueHybridPath(path);
         visualizer.Trigger();
         ROS_INFO("Hybrid A* path published after %.3f s; continuing with "
@@ -100,11 +135,14 @@ int main(int argc, char** argv) {
                 [&](planning::HybridSearchProgress progress) {
                   std::lock_guard<std::mutex> lock(search_progress_mutex);
                   if (search_finished) return;
-                  pending_search_progress =
+                  auto progress_snapshot =
                       std::make_shared<planning::HybridSearchProgress>(
                           std::move(progress));
+                  pending_search_progress = progress_snapshot;
+                  latest_search_progress = std::move(progress_snapshot);
                 })
           : planning_platform::PlanningPipeline::HybridProgressCallback{});
+  scene_republish_timer.stop();
   ROS_INFO("Initial guess %s; NLP nodes: %zu; elapsed: %.3f s",
            result.initial_guess_succeeded ? "succeeded" : "failed",
            result.initial_guess.nodes.size(), result.initial_guess_elapsed);
@@ -146,15 +184,26 @@ int main(int argc, char** argv) {
                 error.c_str());
     }
   }
-  visualizer.Trigger();
+  {
+    std::lock_guard<std::mutex> visualization_lock(visualization_mutex);
+    visualizer.Trigger();
+  }
   ROS_INFO("Experiment visualization remains active; press Ctrl+C to exit");
 
   ros::Timer republish_timer = private_node.createTimer(
       ros::Duration(1.0),
       [&](const ros::TimerEvent&) {
+        std::shared_ptr<planning::HybridSearchProgress> search_progress;
+        {
+          std::lock_guard<std::mutex> lock(search_progress_mutex);
+          search_progress = latest_search_progress;
+        }
+        std::lock_guard<std::mutex> visualization_lock(visualization_mutex);
         visualizer.QueueScene(snapshot);
         if (result.hybrid_succeeded) {
           visualizer.QueueHybridPath(result.hybrid_path);
+        } else if (search_progress) {
+          visualizer.QueueHybridSearch(*search_progress);
         }
         if (playback_started) {
           visualizer.QueueOptimizedTrajectory(
