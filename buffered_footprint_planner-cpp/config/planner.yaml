@@ -4,6 +4,7 @@ front_hang: 0.036
 wheel_base: 0.143
 length: 0.211
 width: 0.191
+
 max_velocity: 0.25
 max_reverse_velocity: 0.20
 max_acceleration: 0.1
