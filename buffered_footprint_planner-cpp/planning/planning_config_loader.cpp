@@ -1,5 +1,7 @@
 #include "planning/planning_config_loader.h"
 
+#include <cmath>
+
 #include "optimizer/embodied_footprint.h"
 
 namespace planning_platform {
@@ -46,6 +48,7 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   node.param("delta_t", planner.delta_t, 0.5);
   node.param("analytic_expansion_cost", planner.analytic_expansion_cost, 20.0);
   node.param("dubins_phi_gamma", planner.dubins_phi_gamma, 1.1);
+  node.param("hybrid_astar_timeout", planner.hybrid_astar_timeout, 8.0);
   int next_node_num = 20;
   int explore_node_num = 2000000;
   node.param("next_node_num", next_node_num, next_node_num);
@@ -80,6 +83,8 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   if (next_node_num < 4 || next_node_num % 2 != 0 || explore_node_num <= 0 ||
       planner.xy_grid_resolution <= 0.0 || planner.phi_grid_resolution <= 0.0 ||
       planner.step_size <= 0.0 || planner.grid_a_star_xy_resolution <= 0.0 ||
+      !std::isfinite(planner.hybrid_astar_timeout) ||
+      planner.hybrid_astar_timeout <= 0.0 ||
       planner.delta_t <= 0.0 || initial.forward_speed <= 0.0 ||
       initial.reverse_speed <= 0.0 || nlp.dmin <= 0.0 ||
       nlp.max_cpu_time <= 0.0 ||

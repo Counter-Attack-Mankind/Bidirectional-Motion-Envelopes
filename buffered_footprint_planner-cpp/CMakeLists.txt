@@ -5,6 +5,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Hybrid A* performs many small geometry checks. Keep explicit user choices,
+# but avoid an unintentionally unoptimized catkin build by default.
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
+endif()
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CASADI REQUIRED casadi)
 find_package(yaml-cpp REQUIRED)

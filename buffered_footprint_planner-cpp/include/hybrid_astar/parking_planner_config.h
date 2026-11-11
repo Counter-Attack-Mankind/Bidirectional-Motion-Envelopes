@@ -22,6 +22,7 @@ struct ParkingPlannerConfig {
   double analytic_expansion_cost = 20.0;
   double dubins_phi_gamma = 1.1;
   size_t explore_node_num = 2000000;
+  double hybrid_astar_timeout = 8.0;
 
   std::array<double, 4> xy_bounds{};
 };

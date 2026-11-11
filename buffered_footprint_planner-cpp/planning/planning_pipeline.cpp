@@ -65,7 +65,8 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
   if (!result.hybrid_succeeded) {
     result.status = result.hybrid_timed_out
         ? "Hybrid A* timeout after " + std::to_string(result.hybrid_elapsed) +
-              " s (8.0 s limit)"
+              " s (" + std::to_string(planner.timeout_seconds()) +
+              " s limit)"
         : "Hybrid A* failed";
     logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
                         &error);

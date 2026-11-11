@@ -21,6 +21,8 @@
 #include "hybrid_astar/grid_search.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 
 namespace planning {
 
@@ -46,13 +48,48 @@ bool GridSearch::CheckConstraints(
   if (obstacles_.empty()) {
     return true;
   }
+  const auto cached = constraint_cache_.find(node->GetIndex());
+  if (cached != constraint_cache_.end()) return cached->second;
   for (const auto &ob : obstacles_) {
     if (should_stop && should_stop()) return false;
+    ++statistics_.obstacle_checks;
     if(ob.IsPointIn({ node->GetX(), node->GetY() })) {
+      constraint_cache_.emplace(node->GetIndex(), false);
       return false;
     }
   }
+  constraint_cache_.emplace(node->GetIndex(), true);
   return true;
+}
+
+GridSearchProgress GridSearch::progress_snapshot() const {
+  GridSearchProgress progress;
+  progress.settled_x = settled_visualization_x_;
+  progress.settled_y = settled_visualization_y_;
+  progress.wavefront_x.reserve(recent_wavefront_.size());
+  progress.wavefront_y.reserve(recent_wavefront_.size());
+  for (const auto& point : recent_wavefront_) {
+    progress.wavefront_x.push_back(point.first);
+    progress.wavefront_y.push_back(point.second);
+  }
+  progress.resolution = xy_grid_resolution_;
+  progress.statistics = statistics_;
+  progress.statistics.elapsed_seconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                    dp_begin_).count();
+  return progress;
+}
+
+void GridSearch::PublishProgress(const ProgressCallback& callback,
+                                 bool force) {
+  if (!callback) return;
+  const auto now = std::chrono::steady_clock::now();
+  if (!force && std::chrono::duration<double>(now - last_progress_publish_)
+                        .count() < kProgressPeriodSeconds) {
+    return;
+  }
+  last_progress_publish_ = now;
+  callback(progress_snapshot());
 }
 
 std::vector<std::shared_ptr<Node2d>> GridSearch::GenerateNextNodes(
@@ -108,7 +145,15 @@ std::vector<std::shared_ptr<Node2d>> GridSearch::GenerateNextNodes(
 
 bool GridSearch::GenerateDpMap(
     const double ex, const double ey, const std::array<double, 4> &XYbounds,
-    const std::function<bool()>& should_stop) {
+    const std::function<bool()>& should_stop,
+    ProgressCallback progress_callback) {
+  dp_begin_ = std::chrono::steady_clock::now();
+  last_progress_publish_ = dp_begin_ - std::chrono::seconds(1);
+  statistics_ = GridSearchStatistics();
+  settled_visualization_x_.clear();
+  settled_visualization_y_.clear();
+  recent_wavefront_.clear();
+  constraint_cache_.clear();
   std::priority_queue<std::pair<int64_t, double>,
       std::vector<std::pair<int64_t, double>>, cmp>
       open_pq;
@@ -121,54 +166,98 @@ bool GridSearch::GenerateDpMap(
   const long double grid_cell_count =
       (static_cast<long double>(max_grid_x_) + 1.0L) *
       (static_cast<long double>(max_grid_y_) + 1.0L);
+  if (grid_cell_count > 0.0L &&
+      grid_cell_count <= static_cast<long double>(
+          std::numeric_limits<std::size_t>::max())) {
+    statistics_.total_grid_cells = static_cast<std::size_t>(grid_cell_count);
+  }
+  visualization_stride_ = std::max<std::size_t>(
+      1, (statistics_.total_grid_cells + kMaxVisualizedSettledCells - 1) /
+             kMaxVisualizedSettledCells);
   // Avoid a multi-second unordered_map rehash crossing the hard deadline.
   // The cap prevents malformed bounds from causing an unbounded reservation.
   if (grid_cell_count > 0.0L && grid_cell_count <= 10000000.0L) {
     const auto reserve_count = static_cast<std::size_t>(grid_cell_count);
     dp_map_.reserve(reserve_count);
     open_set.reserve(reserve_count);
+    constraint_cache_.reserve(reserve_count);
   }
+  PublishProgress(progress_callback, true);
   if (should_stop && should_stop()) return false;
   std::shared_ptr<Node2d> end_node =
       std::make_shared<Node2d>(ex, ey, xy_grid_resolution_, XYbounds_);
   open_set.emplace(end_node->GetIndex(), end_node);
   open_pq.emplace(end_node->GetIndex(), end_node->GetCost());
+  statistics_.enqueue_count = 1;
+  statistics_.queue_size = 1;
+  statistics_.queue_peak = 1;
 
   // Grid a star begins
-  size_t explored_node_num = 0;
   while (!open_pq.empty()) {
     if (should_stop && should_stop()) return false;
     const int64_t current_id = open_pq.top().first;
     const double queued_cost = open_pq.top().second;
     open_pq.pop();
+    statistics_.queue_size = open_pq.size();
     std::shared_ptr<Node2d> current_node = open_set[current_id];
     if (dp_map_.count(current_id) ||
         queued_cost > current_node->GetCost() + 1e-12) continue;
     if (should_stop && should_stop()) return false;
     dp_map_.emplace(current_node->GetIndex(), current_node);
+    ++statistics_.settled_cells;
+    if (progress_callback &&
+        (statistics_.settled_cells - 1) % visualization_stride_ == 0 &&
+        settled_visualization_x_.size() < kMaxVisualizedSettledCells) {
+      settled_visualization_x_.push_back(current_node->GetX());
+      settled_visualization_y_.push_back(current_node->GetY());
+    }
+    if (progress_callback) {
+      recent_wavefront_.emplace_back(current_node->GetX(),
+                                     current_node->GetY());
+      if (recent_wavefront_.size() > kMaxVisualizedWavefrontCells) {
+        recent_wavefront_.pop_front();
+      }
+    }
     std::vector<std::shared_ptr<Node2d>> next_nodes =
         std::move(GenerateNextNodes(current_node));
     for (auto &next_node : next_nodes) {
       if (should_stop && should_stop()) return false;
-      if (!CheckConstraints(next_node, should_stop)) {
-        continue;
-      }
       if (dp_map_.find(next_node->GetIndex()) != dp_map_.end()) {
         continue;
       }
-      if (open_set.find(next_node->GetIndex()) == open_set.end()) {
-        ++explored_node_num;
+      if (!CheckConstraints(next_node, should_stop)) {
+        continue;
+      }
+      const auto open_node = open_set.find(next_node->GetIndex());
+      if (open_node == open_set.end()) {
         next_node->SetPreNode(current_node);
         open_set.emplace(next_node->GetIndex(), next_node);
         open_pq.emplace(next_node->GetIndex(), next_node->GetCost());
-      } else if (open_set[next_node->GetIndex()]->GetCost() >
+        ++statistics_.enqueue_count;
+        statistics_.queue_size = open_pq.size();
+        statistics_.queue_peak =
+            std::max(statistics_.queue_peak, statistics_.queue_size);
+      } else if (open_node->second->GetCost() >
                  next_node->GetCost() + 1e-12) {
         next_node->SetPreNode(current_node);
-        open_set[next_node->GetIndex()] = next_node;
+        open_node->second = next_node;
         open_pq.emplace(next_node->GetIndex(), next_node->GetCost());
+        ++statistics_.enqueue_count;
+        statistics_.queue_size = open_pq.size();
+        statistics_.queue_peak =
+            std::max(statistics_.queue_peak, statistics_.queue_size);
       }
     }
+    statistics_.queue_size = open_pq.size();
+    statistics_.queue_peak =
+        std::max(statistics_.queue_peak, statistics_.queue_size);
+    PublishProgress(progress_callback);
   }
+  statistics_.queue_size = 0;
+  statistics_.elapsed_seconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                    dp_begin_).count();
+  PublishProgress(progress_callback, true);
   return true;
 }
 

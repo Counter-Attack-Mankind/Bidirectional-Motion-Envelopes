@@ -116,6 +116,22 @@ void HybridAStar::PublishProgress(
   progress_callback_(std::move(progress));
 }
 
+void HybridAStar::PublishDpProgress(
+    const GridSearchProgress& grid_progress, HybridSearchStatus status) {
+  if (!progress_callback_) return;
+  HybridSearchProgress progress;
+  progress.stage = HybridSearchStage::kBuildingDpMap;
+  progress.dp_settled_x = grid_progress.settled_x;
+  progress.dp_settled_y = grid_progress.settled_y;
+  progress.dp_wavefront_x = grid_progress.wavefront_x;
+  progress.dp_wavefront_y = grid_progress.wavefront_y;
+  progress.dp_grid_resolution = grid_progress.resolution;
+  progress.dp_statistics = grid_progress.statistics;
+  progress.elapsed_seconds = elapsed_seconds();
+  progress.status = status;
+  progress_callback_(std::move(progress));
+}
+
 bool HybridAStar::AnalyticExpansion(const std::shared_ptr<Node3d>& current_node) {
   std::shared_ptr<ReedSheppPath> reeds_shepp_to_check =
       std::make_shared<ReedSheppPath>();
@@ -516,7 +532,8 @@ bool HybridAStar::Plan(
   search_begin_ = std::chrono::steady_clock::now();
   search_deadline_ = search_begin_ +
       std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-          std::chrono::duration<double>(kSearchTimeoutSeconds));
+          std::chrono::duration<double>(
+              planner_open_space_config_.hybrid_astar_timeout));
   timed_out_ = false;
   cancelled_ = false;
   progress_callback_ = std::move(progress_callback);
@@ -532,14 +549,13 @@ bool HybridAStar::Plan(
 
   if (save_debug_data_) HybridAStarLogger::Initialize();
   printf("Hybrid A* search started (timeout %.1f s)\n",
-         kSearchTimeoutSeconds);
+         planner_open_space_config_.hybrid_astar_timeout);
 
   // load nodes and obstacles
   start_node_.reset(
       new Node3d(sx, sy, sphi, XYbounds_, planner_open_space_config_));
   end_node_.reset(
       new Node3d(ex, ey, ephi, XYbounds_, planner_open_space_config_));
-  PublishProgress(start_node_, HybridSearchStatus::kSearching, true);
   if (!ValidityCheck(start_node_)) {
     printf("start_node in collision with obstacles");
     PublishProgress(start_node_, HybridSearchStatus::kFailed, true);
@@ -552,34 +568,55 @@ bool HybridAStar::Plan(
     HybridAStarLogger::Finalize();
     return false;
   }
+  GridSearch::ProgressCallback dp_progress;
+  if (progress_callback_) {
+    dp_progress = [this](GridSearchProgress progress) {
+      PublishDpProgress(progress, HybridSearchStatus::kSearching);
+    };
+  }
   if (!grid_a_star_heuristic_generator_->GenerateDpMap(
-          ex, ey, XYbounds_, [this]() {
-            PublishProgress(start_node_, HybridSearchStatus::kSearching,
-                            false);
-            return StopRequested();
-          })) {
+          ex, ey, XYbounds_, [this]() { return StopRequested(); },
+          std::move(dp_progress))) {
+    const auto dp_snapshot =
+        grid_a_star_heuristic_generator_->progress_snapshot();
     if (timed_out_) {
-      printf("Hybrid A* timeout after %.3f s while building DP map\n",
-             elapsed_seconds());
+      printf("Hybrid A* timeout after %.3f s (limit %.3f s) while building "
+             "DP map: grid=%zu settled=%zu enqueued=%zu queue=%zu "
+             "peak=%zu obstacle_checks=%zu\n",
+             elapsed_seconds(), planner_open_space_config_.hybrid_astar_timeout,
+             dp_snapshot.statistics.total_grid_cells,
+             dp_snapshot.statistics.settled_cells,
+             dp_snapshot.statistics.enqueue_count,
+             dp_snapshot.statistics.queue_size,
+             dp_snapshot.statistics.queue_peak,
+             dp_snapshot.statistics.obstacle_checks);
     }
-    PublishProgress(start_node_, timed_out_ ? HybridSearchStatus::kTimedOut :
-                    (cancelled_ ? HybridSearchStatus::kCancelled :
-                                  HybridSearchStatus::kFailed), true);
+    PublishDpProgress(dp_snapshot,
+                      timed_out_ ? HybridSearchStatus::kTimedOut :
+                      (cancelled_ ? HybridSearchStatus::kCancelled :
+                                    HybridSearchStatus::kFailed));
     HybridAStarLogger::Finalize();
     return false;
   }
 
   // DEBUG: check if DP map reaches start
   double start_dp_cost = grid_a_star_heuristic_generator_->CheckDpMap(sx, sy);
-  printf("Hybrid A* DP map completed in %.3f s; start heuristic: %.4f\n",
-         elapsed_seconds(), start_dp_cost);
+  const auto& dp_stats = grid_a_star_heuristic_generator_->statistics();
+  printf("Hybrid A* DP map completed in %.3f s: grid=%zu settled=%zu "
+         "enqueued=%zu peak=%zu obstacle_checks=%zu; start heuristic=%.4f\n",
+         dp_stats.elapsed_seconds, dp_stats.total_grid_cells,
+         dp_stats.settled_cells, dp_stats.enqueue_count, dp_stats.queue_peak,
+         dp_stats.obstacle_checks, start_dp_cost);
   if (std::isinf(start_dp_cost)) {
-    printf("WARNING: 2D grid search cannot reach start from goal! Check obstacles/bounds.\n");
+    printf("Hybrid A* DP map completed but start is unreachable from goal.\n");
     printf("  Bounds: x=[%.2f, %.2f], y=[%.2f, %.2f]\n",
            XYbounds_[0], XYbounds_[1], XYbounds_[2], XYbounds_[3]);
     printf("  Start: (%.3f, %.3f, %.3f), Goal: (%.3f, %.3f, %.3f)\n",
            sx, sy, sphi, ex, ey, ephi);
   }
+
+  // Switch the shared visualization stream from the 2D DP phase to Hybrid A*.
+  PublishProgress(start_node_, HybridSearchStatus::kSearching, true);
 
   // load open set, pq
   open_set_.emplace(start_node_->GetIndex(), start_node_);

@@ -102,6 +102,7 @@ bool ExperimentLogger::WriteEffectiveParameters(
       << "  analytic_expansion_cost: " << c.planner.analytic_expansion_cost << '\n'
       << "  dubins_phi_gamma: " << c.planner.dubins_phi_gamma << '\n'
       << "  explore_node_num: " << c.planner.explore_node_num << '\n'
+      << "  hybrid_astar_timeout: " << c.planner.hybrid_astar_timeout << '\n'
       << "initial_guess:\n"
       << "  min_dt: " << c.initial_guess.min_dt << '\n'
       << "  max_dt: " << c.initial_guess.max_dt << '\n'

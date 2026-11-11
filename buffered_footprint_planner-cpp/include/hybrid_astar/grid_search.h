@@ -19,6 +19,8 @@
  */
 
 #pragma once
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 
@@ -29,6 +31,7 @@
 #include <utility>
 #include <vector>
 #include <array>
+#include <deque>
 
 #include "common/util/string_utils.h"
 #include "common/math/circle_2d.h"
@@ -46,8 +49,8 @@ public:
     // XYbounds with xmin, xmax, ymin, ymax
     x_ = x;
     y_ = y;
-    grid_x_ = static_cast<int>((x - XYbounds[0]) / xy_resolution);
-    grid_y_ = static_cast<int>((y - XYbounds[2]) / xy_resolution);
+    grid_x_ = ToGridCoordinate(x, XYbounds[0], xy_resolution);
+    grid_y_ = ToGridCoordinate(y, XYbounds[2], xy_resolution);
     index_ = ComputeStringIndex(grid_x_, grid_y_);
   }
   void SetPathCost(double path_cost) {
@@ -73,8 +76,8 @@ public:
                                double xy_resolution,
                                const std::array<double, 4>& XYbounds) {
     // XYbounds with xmin, xmax, ymin, ymax
-    int grid_x = static_cast<int>((x - XYbounds[0]) / xy_resolution);
-    int grid_y = static_cast<int>((y - XYbounds[2]) / xy_resolution);
+    const int grid_x = ToGridCoordinate(x, XYbounds[0], xy_resolution);
+    const int grid_y = ToGridCoordinate(y, XYbounds[2], xy_resolution);
     return ComputeStringIndex(grid_x, grid_y);
   }
   bool operator==(const Node2d& right) const {
@@ -82,8 +85,17 @@ public:
   }
 
 private:
+  static int ToGridCoordinate(double value, double lower_bound,
+                              double resolution) {
+    return static_cast<int>(
+        std::floor((value - lower_bound) / resolution + 1e-9));
+  }
+
   static int64_t ComputeStringIndex(int x_grid, int y_grid) {
-    return ((int64_t)x_grid << 32) | y_grid;
+    const auto x_bits = static_cast<std::uint32_t>(x_grid);
+    const auto y_bits = static_cast<std::uint32_t>(y_grid);
+    return static_cast<std::int64_t>(
+        (static_cast<std::uint64_t>(x_bits) << 32U) | y_bits);
   }
 
 private:
@@ -104,16 +116,40 @@ struct GridAStartResult {
   double path_cost = 0.0;
 };
 
+struct GridSearchStatistics {
+  std::size_t total_grid_cells = 0;
+  std::size_t settled_cells = 0;
+  std::size_t enqueue_count = 0;
+  std::size_t queue_size = 0;
+  std::size_t queue_peak = 0;
+  std::size_t obstacle_checks = 0;
+  double elapsed_seconds = 0.0;
+};
+
+struct GridSearchProgress {
+  std::vector<double> settled_x;
+  std::vector<double> settled_y;
+  std::vector<double> wavefront_x;
+  std::vector<double> wavefront_y;
+  double resolution = 0.0;
+  GridSearchStatistics statistics;
+};
+
 class GridSearch {
 public:
+  using ProgressCallback = std::function<void(GridSearchProgress)>;
+
   explicit GridSearch(const ParkingPlannerConfig &config, const std::vector<common::math::Polygon2d> &obstacles);
   virtual ~GridSearch() = default;
   bool GenerateAStarPath(
       double sx, double sy, double ex, double ey,
       const std::array<double, 4>& XYbounds, GridAStartResult* result);
   bool GenerateDpMap(double ex, double ey, const std::array<double, 4>& XYbounds,
-                     const std::function<bool()>& should_stop = {});
+                     const std::function<bool()>& should_stop = {},
+                     ProgressCallback progress_callback = {});
   double CheckDpMap(double sx, double sy);
+  const GridSearchStatistics& statistics() const { return statistics_; }
+  GridSearchProgress progress_snapshot() const;
 
 private:
   static double EuclidDistance(double x1, double y1, double x2,
@@ -123,6 +159,7 @@ private:
   bool CheckConstraints(const std::shared_ptr<Node2d>& node,
                         const std::function<bool()>& should_stop = {});
   void LoadGridAStarResult(GridAStartResult* result);
+  void PublishProgress(const ProgressCallback& callback, bool force = false);
 
 private:
   double xy_grid_resolution_ = 0.0;
@@ -141,5 +178,16 @@ private:
     }
   };
   std::unordered_map<int64_t, std::shared_ptr<Node2d>> dp_map_;
+  std::unordered_map<int64_t, bool> constraint_cache_;
+  GridSearchStatistics statistics_;
+  std::chrono::steady_clock::time_point dp_begin_;
+  std::chrono::steady_clock::time_point last_progress_publish_;
+  std::vector<double> settled_visualization_x_;
+  std::vector<double> settled_visualization_y_;
+  std::deque<std::pair<double, double>> recent_wavefront_;
+  std::size_t visualization_stride_ = 1;
+  static constexpr double kProgressPeriodSeconds = 0.15;
+  static constexpr std::size_t kMaxVisualizedSettledCells = 8000;
+  static constexpr std::size_t kMaxVisualizedWavefrontCells = 128;
 };
 }  // namespace planning

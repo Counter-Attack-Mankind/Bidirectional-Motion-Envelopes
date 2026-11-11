@@ -59,9 +59,15 @@ enum class HybridSearchStatus {
   kCancelled,
 };
 
+enum class HybridSearchStage {
+  kBuildingDpMap,
+  kHybridSearch,
+};
+
 // Bounded, presentation-only snapshot. It never participates in search costs
 // or node ordering.
 struct HybridSearchProgress {
+  HybridSearchStage stage = HybridSearchStage::kHybridSearch;
   std::vector<double> expanded_x;
   std::vector<double> expanded_y;
   std::vector<double> backtrack_x;
@@ -71,6 +77,12 @@ struct HybridSearchProgress {
   double current_phi = 0.0;
   double elapsed_seconds = 0.0;
   std::size_t expanded_count = 0;
+  std::vector<double> dp_settled_x;
+  std::vector<double> dp_settled_y;
+  std::vector<double> dp_wavefront_x;
+  std::vector<double> dp_wavefront_y;
+  double dp_grid_resolution = 0.0;
+  GridSearchStatistics dp_statistics;
   bool has_current = false;
   HybridSearchStatus status = HybridSearchStatus::kSearching;
 };
@@ -90,6 +102,9 @@ public:
             ProgressCallback progress_callback = {},
             CancellationCallback cancellation_callback = {});
   bool timed_out() const { return timed_out_; }
+  double timeout_seconds() const {
+    return planner_open_space_config_.hybrid_astar_timeout;
+  }
   double elapsed_seconds() const;
   bool TrajectoryPartition(const HybridAStartResult& result,
                            std::vector<HybridAStartResult>* partitioned_result);
@@ -118,6 +133,8 @@ private:
   bool StopRequested();
   void PublishProgress(const std::shared_ptr<Node3d>& current_node,
                        HybridSearchStatus status, bool force);
+  void PublishDpProgress(const GridSearchProgress& grid_progress,
+                         HybridSearchStatus status);
 
 private:
   ParkingPlannerConfig planner_open_space_config_;
@@ -167,7 +184,6 @@ private:
   std::vector<double> expanded_visualization_x_;
   std::vector<double> expanded_visualization_y_;
   std::size_t expanded_node_count_ = 0;
-  static constexpr double kSearchTimeoutSeconds = 8.0;
   static constexpr double kProgressPeriodSeconds = 0.15;
   static constexpr std::size_t kMaxVisualizedExpandedNodes = 10000;
   static constexpr std::size_t kMaxBacktrackNodes = 1000;
