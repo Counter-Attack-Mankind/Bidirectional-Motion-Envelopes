@@ -22,6 +22,8 @@ struct PathPoint {
   double y = 0.0;
   double theta = 0.0;
   int direction = 1;
+  double kappa = 0.0;
+  std::size_t source_index = 0;
 };
 
 struct DirectionSegment {
@@ -33,6 +35,7 @@ struct DirectionSegment {
 
 struct DenseProfile {
   std::vector<TrajectoryNode> nodes;
+  std::vector<double> time;
   double duration = 0.0;
 };
 
@@ -120,6 +123,7 @@ void Linspace(double first, double last, std::size_t count,
 
 bool SolveMinimumTimeProfile(double length, double max_velocity,
                              double max_acceleration,
+                             std::vector<double>* time,
                              std::vector<double>* distance,
                              std::vector<double>* velocity,
                              std::vector<double>* acceleration,
@@ -139,18 +143,20 @@ bool SolveMinimumTimeProfile(double length, double max_velocity,
         *duration / kDenseTimeStep));
     std::vector<double> timeline;
     Linspace(0.0, *duration, count, &timeline);
-    distance->clear(); velocity->clear(); acceleration->clear();
-    for (double time : timeline) {
-      if (time <= slope_time) {
+    time->clear(); distance->clear(); velocity->clear(); acceleration->clear();
+    for (double sample_time : timeline) {
+      time->push_back(sample_time);
+      if (sample_time <= slope_time) {
         acceleration->push_back(max_acceleration);
-        velocity->push_back(time * max_acceleration);
-        distance->push_back(0.5 * max_acceleration * time * time);
-      } else if (time <= slope_time + cruise_time) {
+        velocity->push_back(sample_time * max_acceleration);
+        distance->push_back(0.5 * max_acceleration * sample_time * sample_time);
+      } else if (sample_time <= slope_time + cruise_time) {
         acceleration->push_back(0.0);
         velocity->push_back(max_velocity);
-        distance->push_back(threshold + max_velocity * (time - slope_time));
+        distance->push_back(threshold + max_velocity *
+                            (sample_time - slope_time));
       } else {
-        const double local = time - slope_time - cruise_time;
+        const double local = sample_time - slope_time - cruise_time;
         acceleration->push_back(-max_acceleration);
         velocity->push_back(max_velocity - max_acceleration * local);
         distance->push_back(threshold + max_velocity * cruise_time +
@@ -165,19 +171,24 @@ bool SolveMinimumTimeProfile(double length, double max_velocity,
     std::vector<double> half_timeline;
     Linspace(0.0, half_time, half_count, &half_timeline);
     *duration = 2.0 * half_time;
-    distance->clear(); velocity->clear(); acceleration->clear();
+    time->clear(); distance->clear(); velocity->clear(); acceleration->clear();
     const double peak_velocity = half_time * max_acceleration;
     const double half_distance = 0.5 * max_acceleration * half_time * half_time;
-    for (double time : half_timeline) {
+    for (double sample_time : half_timeline) {
+      time->push_back(sample_time);
       acceleration->push_back(max_acceleration);
-      velocity->push_back(time * max_acceleration);
-      distance->push_back(0.5 * max_acceleration * time * time);
+      velocity->push_back(sample_time * max_acceleration);
+      distance->push_back(0.5 * max_acceleration * sample_time * sample_time);
     }
-    for (double time : half_timeline) {
+    // The acceleration and braking profiles share the apex. Store it once so
+    // that every dense sample has a strictly increasing timestamp.
+    for (std::size_t i = 1; i < half_timeline.size(); ++i) {
+      const double sample_time = half_timeline[i];
+      time->push_back(half_time + sample_time);
       acceleration->push_back(-max_acceleration);
-      velocity->push_back(peak_velocity - max_acceleration * time);
-      distance->push_back(half_distance + peak_velocity * time -
-                          0.5 * max_acceleration * time * time);
+      velocity->push_back(peak_velocity - max_acceleration * sample_time);
+      distance->push_back(half_distance + peak_velocity * sample_time -
+                          0.5 * max_acceleration * sample_time * sample_time);
     }
   }
   return true;
@@ -200,7 +211,8 @@ void InterpolateGeometry(const std::vector<PathPoint>& path,
                         path[i - 1].y + ratio * (path[i].y - path[i - 1].y),
                         path[i - 1].theta + ratio *
                             (path[i].theta - path[i - 1].theta),
-                        path[start].direction});
+                        path[start].direction, path[i - 1].kappa,
+                        path[i - 1].source_index});
     }
   }
   dense->push_back(path[end]);
@@ -219,7 +231,8 @@ bool CalculateTimeStamp(const std::vector<PathPoint>& path,
   const double length = PathLength(path, start, end);
   std::vector<double> s, v, a;
   if (!SolveMinimumTimeProfile(length, vehicle.v_max, vehicle.a_max,
-                               &s, &v, &a, &profile->duration, error)) {
+                               &profile->time, &s, &v, &a,
+                               &profile->duration, error)) {
     return false;
   }
   std::vector<PathPoint> geometry;
@@ -228,21 +241,35 @@ bool CalculateTimeStamp(const std::vector<PathPoint>& path,
   profile->nodes.clear();
   profile->nodes.reserve(s.size());
   for (std::size_t i = 0; i < s.size(); ++i) {
-    double best_error = std::numeric_limits<double>::infinity();
-    std::size_t best = 0;
-    for (std::size_t j = 0; j < cumulative.size(); ++j) {
-      const double current_error = std::abs(s[i] - cumulative[j]);
-      if (current_error <= best_error) {
-        best_error = current_error;
-        best = j;
+    const double target = std::clamp(s[i], 0.0, cumulative.back());
+    auto upper = std::upper_bound(cumulative.begin(), cumulative.end(), target);
+    std::size_t lower_index = 0;
+    std::size_t upper_index = 0;
+    double ratio = 0.0;
+    if (upper == cumulative.begin()) {
+      upper_index = lower_index = 0;
+    } else if (upper == cumulative.end()) {
+      upper_index = lower_index = cumulative.size() - 1;
+    } else {
+      upper_index = static_cast<std::size_t>(upper - cumulative.begin());
+      lower_index = upper_index - 1;
+      const double span = cumulative[upper_index] - cumulative[lower_index];
+      if (span > 1e-12) {
+        ratio = (target - cumulative[lower_index]) / span;
       }
     }
     TrajectoryNode node;
-    node.x = geometry[best].x;
-    node.y = geometry[best].y;
-    node.theta = geometry[best].theta;
+    node.x = geometry[lower_index].x + ratio *
+             (geometry[upper_index].x - geometry[lower_index].x);
+    node.y = geometry[lower_index].y + ratio *
+             (geometry[upper_index].y - geometry[lower_index].y);
+    node.theta = geometry[lower_index].theta + ratio *
+                 (geometry[upper_index].theta - geometry[lower_index].theta);
     node.v = direction * std::abs(v[i]);
     node.a = direction * a[i];
+    node.phy = std::clamp(std::atan(vehicle.wheel_base *
+                                   geometry[lower_index].kappa),
+                          -vehicle.delta_max, vehicle.delta_max);
     profile->nodes.push_back(node);
   }
   return true;
@@ -273,7 +300,7 @@ int IntervalDirection(const std::vector<TrajectoryNode>& dense,
 }
 
 bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
-                        double terminal_time,
+                        const std::vector<double>& dense_time,
                         const std::vector<std::size_t>& mandatory,
                         const VehicleParameter& vehicle,
                         const InitialGuessConfig& config,
@@ -281,14 +308,8 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
                         InitialGuessDiagnostics* diagnostics,
                          std::vector<std::size_t>* selected_indices,
                         std::string* error) {
-  const double base_dt = terminal_time /
-                         static_cast<double>(dense.size() - 1);
-  const std::size_t min_step = std::max<std::size_t>(1,
-      std::ceil((config.min_dt - 1e-12) / base_dt));
-  const std::size_t max_step = static_cast<std::size_t>(
-      std::floor((config.max_dt + 1e-12) / base_dt));
-  if (max_step < min_step) {
-    if (error) *error = "Dense base step is larger than max_dt";
+  if (dense_time.size() != dense.size()) {
+    if (error) *error = "Dense trajectory timestamps are inconsistent";
     return false;
   }
   std::vector<std::size_t> selected{0};
@@ -301,12 +322,16 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
     for (std::size_t index : mandatory) {
       if (index > current) { boundary = index; break; }
     }
-    const std::size_t to_boundary = boundary - current;
-    const std::size_t upper = std::min(max_step, to_boundary);
     std::vector<std::size_t> candidates;
-    for (std::size_t step = min_step; step <= upper; ++step) {
-      const std::size_t remaining = to_boundary - step;
-      if (remaining == 0 || remaining >= min_step) candidates.push_back(step);
+    for (std::size_t candidate = current + 1; candidate <= boundary;
+         ++candidate) {
+      const double dt = dense_time[candidate] - dense_time[current];
+      if (dt < config.min_dt - 1e-12) continue;
+      if (dt > config.max_dt + 1e-12) break;
+      const double remaining = dense_time[boundary] - dense_time[candidate];
+      if (candidate == boundary || remaining >= config.min_dt - 1e-12) {
+        candidates.push_back(candidate);
+      }
     }
     if (candidates.empty()) {
       std::ostringstream message;
@@ -315,10 +340,9 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
       if (error) *error = message.str();
       return false;
     }
-    std::size_t last_valid = 0;
-    for (std::size_t step : candidates) {
-      const std::size_t candidate = current + step;
-      const double dt = step * base_dt;
+    std::size_t last_valid = current;
+    for (std::size_t candidate : candidates) {
+      const double dt = dense_time[candidate] - dense_time[current];
       const int direction = IntervalDirection(dense, current, candidate,
                                               previous_direction);
       bool mixed_direction = false;
@@ -339,19 +363,20 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
               validity.reverse_cond1, validity.reverse_cond2}}});
         break;
       }
-      last_valid = step;
+      last_valid = candidate;
     }
-    if (last_valid == 0) {
+    if (last_valid == current) {
       std::ostringstream message;
       message << "No admissible interval at dense index " << current;
       if (error) *error = message.str();
       return false;
     }
-    current += last_valid;
+    const std::size_t previous = current;
+    current = last_valid;
     selected.push_back(current);
-    interval_time.push_back(last_valid * base_dt);
-    previous_direction = IntervalDirection(dense, selected[selected.size() - 2],
-                                           current, previous_direction);
+    interval_time.push_back(dense_time[current] - dense_time[previous]);
+    previous_direction = IntervalDirection(dense, previous, current,
+                                           previous_direction);
     ++interval_index;
   }
   trajectory->nodes.clear();
@@ -373,6 +398,10 @@ void FinalizeInitialValues(const VehicleParameter& vehicle,
                            const InitialGuessConfig& config,
                            Trajectory* trajectory,
                            InitialGuessDiagnostics* diagnostics) {
+  // Match the NLP endpoint steering constraints before differencing steering;
+  // in particular, the penultimate rate must lead to the fixed zero endpoint.
+  trajectory->nodes.front().phy = 0.0;
+  trajectory->nodes.back().phy = 0.0;
   for (std::size_t i = 0; i < trajectory->intervals.size(); ++i) {
     const double dt = trajectory->intervals[i].dt;
     const double raw_a = (trajectory->nodes[i + 1].v -
@@ -394,11 +423,9 @@ void FinalizeInitialValues(const VehicleParameter& vehicle,
   }
   trajectory->nodes.front().v = 0.0;
   trajectory->nodes.front().a = 0.0;
-  trajectory->nodes.front().phy = 0.0;
   trajectory->nodes.front().w = 0.0;
   trajectory->nodes.back().v = 0.0;
   trajectory->nodes.back().a = 0.0;
-  trajectory->nodes.back().phy = 0.0;
   trajectory->nodes.back().w = 0.0;
 
   diagnostics->min_dt = std::numeric_limits<double>::infinity();
@@ -485,13 +512,9 @@ bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
   for (std::size_t i = 0; i < hybrid_path.x.size(); ++i) {
     if (i > 0 && hybrid_path.x[i] == hybrid_path.x[i - 1] &&
         hybrid_path.y[i] == hybrid_path.y[i - 1]) continue;
-    int direction = hybrid_path.gear[i] ? 1 : -1;
-    if (hybrid_path.v.size() == hybrid_path.x.size()) {
-      if (hybrid_path.v[i] > 0.0) direction = 1;
-      if (hybrid_path.v[i] < 0.0) direction = -1;
-    }
+    const int direction = hybrid_path.gear[i] ? 1 : -1;
     path.push_back({hybrid_path.x[i], hybrid_path.y[i],
-                    hybrid_path.phi[i], direction});
+                    hybrid_path.phi[i], direction, 0.0, i});
   }
   diagnostics->deduplicated_point_count = path.size();
   if (path.size() < 2) {
@@ -503,6 +526,34 @@ bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
     while (path[i].theta - path[i - 1].theta > M_PI) path[i].theta -= 2.0 * M_PI;
     while (path[i].theta - path[i - 1].theta < -M_PI) path[i].theta += 2.0 * M_PI;
   }
+  const bool has_edge_steering =
+      hybrid_path.steer.size() + 1 == hybrid_path.x.size();
+  for (std::size_t i = 0; i + 1 < path.size(); ++i) {
+    const std::size_t first = path[i].source_index;
+    const std::size_t last = path[i + 1].source_index;
+    double weighted_kappa = 0.0;
+    double total_length = 0.0;
+    for (std::size_t edge = first; edge < last; ++edge) {
+      const double edge_length = std::hypot(
+          hybrid_path.x[edge + 1] - hybrid_path.x[edge],
+          hybrid_path.y[edge + 1] - hybrid_path.y[edge]);
+      if (edge_length <= 1e-12) continue;
+      path[i].direction = hybrid_path.gear[edge] ? 1 : -1;
+      if (has_edge_steering) {
+        weighted_kappa += edge_length *
+            std::tan(hybrid_path.steer[edge]) / vehicle.wheel_base;
+      }
+      total_length += edge_length;
+    }
+    if (has_edge_steering && total_length > 1e-12) {
+      path[i].kappa = weighted_kappa / total_length;
+    } else if (total_length > 1e-12) {
+      const double signed_length = path[i].direction * total_length;
+      path[i].kappa = (path[i + 1].theta - path[i].theta) / signed_length;
+    }
+  }
+  path.back().direction = path[path.size() - 2].direction;
+  path.back().kappa = path[path.size() - 2].kappa;
   diagnostics->hybrid_path_length = PathLength(path, 0, path.size() - 1);
   auto segments = SplitDirections(path);
   diagnostics->raw_direction_segments = segments.size();
@@ -515,6 +566,7 @@ bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
   for (std::size_t i = 1; i < segments.size(); ++i) cuts.push_back(segments[i].start);
   cuts.push_back(path.size() - 1);
   std::vector<TrajectoryNode> dense;
+  std::vector<double> dense_time;
   std::vector<std::size_t> mandatory;
   double terminal_time = 0.0;
   for (std::size_t i = 0; i + 1 < cuts.size(); ++i) {
@@ -524,8 +576,14 @@ bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
       diagnostics->failure_reason = error ? *error : "CalculateTimeStamp failed";
       return false;
     }
-    if (i > 0 && !profile.nodes.empty()) profile.nodes.erase(profile.nodes.begin());
+    if (i > 0 && !profile.nodes.empty()) {
+      profile.nodes.erase(profile.nodes.begin());
+      profile.time.erase(profile.time.begin());
+    }
     dense.insert(dense.end(), profile.nodes.begin(), profile.nodes.end());
+    for (double local_time : profile.time) {
+      dense_time.push_back(terminal_time + local_time);
+    }
     terminal_time += profile.duration;
     if (i + 2 < cuts.size()) mandatory.push_back(dense.size() - 1);
   }
@@ -534,23 +592,19 @@ bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
     if (error) *error = diagnostics->failure_reason;
     return false;
   }
-  const double base_dt = terminal_time / static_cast<double>(dense.size() - 1);
   std::vector<double> phi_raw(dense.size(), 0.0);
   std::vector<double> w_raw(dense.size(), 0.0);
-  for (std::size_t i = 1; i + 1 < dense.size(); ++i) {
-    if (std::abs(dense[i].v) < 1e-6) {
-      phi_raw[i] = 0.0;
-      dense[i].phy = 0.0;
-    } else {
-      phi_raw[i] = std::atan((dense[i + 1].theta - dense[i].theta) *
-                             vehicle.wheel_base /
-                             (base_dt * dense[i].v));
-      dense[i].phy = std::clamp(phi_raw[i], -vehicle.delta_max,
-                                vehicle.delta_max);
-    }
+  for (std::size_t i = 0; i < dense.size(); ++i) {
+    phi_raw[i] = dense[i].phy;
   }
-  for (std::size_t i = 1; i + 1 < dense.size(); ++i) {
-    w_raw[i] = (dense[i + 1].phy - dense[i].phy) / base_dt;
+  for (std::size_t i = 0; i + 1 < dense.size(); ++i) {
+    const double dt = dense_time[i + 1] - dense_time[i];
+    if (dt <= 0.0) {
+      diagnostics->failure_reason = "Dense trajectory timestamps are not increasing";
+      if (error) *error = diagnostics->failure_reason;
+      return false;
+    }
+    w_raw[i] = (dense[i + 1].phy - dense[i].phy) / dt;
     dense[i].w = std::clamp(w_raw[i],
                             -vehicle.omega_max, vehicle.omega_max);
   }
@@ -558,12 +612,12 @@ bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
     trace->dense_samples.reserve(dense.size());
     for (std::size_t i = 0; i < dense.size(); ++i) {
       trace->dense_samples.push_back(
-          {i, i * base_dt, dense[i], phi_raw[i], dense[i].phy,
+          {i, dense_time[i], dense[i], phi_raw[i], dense[i].phy,
            w_raw[i], dense[i].w});
     }
   }
   diagnostics->dense_node_count = dense.size();
-  if (!SelectTemporalMesh(dense, terminal_time, mandatory, vehicle, config,
+  if (!SelectTemporalMesh(dense, dense_time, mandatory, vehicle, config,
                            trajectory, diagnostics,
                            trace ? &trace->selected_dense_indices : nullptr,
                            error)) {
