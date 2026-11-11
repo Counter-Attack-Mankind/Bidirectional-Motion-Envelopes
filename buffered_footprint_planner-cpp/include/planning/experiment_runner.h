@@ -16,7 +16,9 @@ class ExperimentRunner {
                planning_platform::PlanningRunResult* result,
                std::string* error,
                planning_platform::PlanningPipeline::HybridCompleteCallback
-                   hybrid_complete = {}) const;
+                   hybrid_complete = {},
+               planning_platform::PlanningPipeline::HybridProgressCallback
+                   hybrid_progress = {}) const;
 
  private:
   planning_platform::PlanningConfiguration configuration_;

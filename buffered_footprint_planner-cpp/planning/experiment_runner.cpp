@@ -15,7 +15,9 @@ bool ExperimentRunner::RunTask(
     const std::string& tasks_root, int task_id,
     planning_platform::PlanningRunResult* result, std::string* error,
     planning_platform::PlanningPipeline::HybridCompleteCallback
-        hybrid_complete) const {
+        hybrid_complete,
+    planning_platform::PlanningPipeline::HybridProgressCallback
+        hybrid_progress) const {
   if (!result || task_id <= 0) {
     if (error) *error = "Task ID must be a positive integer";
     return false;
@@ -35,7 +37,8 @@ bool ExperimentRunner::RunTask(
   auto configuration = configuration_;
   configuration.planner.xy_bounds = snapshot.bounds;
   planning_platform::PlanningPipeline pipeline(std::move(configuration));
-  *result = pipeline.Run(snapshot, "offline", std::move(hybrid_complete));
+  *result = pipeline.Run(snapshot, "offline", std::move(hybrid_complete),
+                         std::move(hybrid_progress));
   return result->success;
 }
 

@@ -1,6 +1,9 @@
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <utility>
 
 #include <ros/ros.h>
 
@@ -47,16 +50,61 @@ int main(int argc, char** argv) {
   ros::AsyncSpinner spinner(1);
   spinner.start();
 
+  bool show_hybrid_search = true;
+  private_node.param("visualization/show_hybrid_search",
+                     show_hybrid_search, true);
+  std::mutex search_progress_mutex;
+  std::mutex visualization_mutex;
+  std::shared_ptr<planning::HybridSearchProgress> pending_search_progress;
+  bool search_finished = false;
+  ros::Timer search_progress_timer;
+  if (show_hybrid_search) {
+    search_progress_timer = private_node.createTimer(
+        ros::Duration(0.05),
+        [&](const ros::TimerEvent&) {
+          std::shared_ptr<planning::HybridSearchProgress> progress;
+          {
+            std::lock_guard<std::mutex> lock(search_progress_mutex);
+            if (search_finished) return;
+            progress = std::move(pending_search_progress);
+          }
+          if (!progress) return;
+          std::lock_guard<std::mutex> visualization_lock(visualization_mutex);
+          {
+            std::lock_guard<std::mutex> lock(search_progress_mutex);
+            if (search_finished) return;
+          }
+          visualizer.QueueHybridSearch(*progress);
+          visualizer.Trigger();
+        });
+  }
+
   experiment::ExperimentRunner runner(configuration);
   planning_platform::PlanningRunResult result;
   const bool success = runner.RunTask(
       tasks_root, task_id, &result, &error,
       [&](const planning::HybridAStartResult& path, double elapsed) {
+        {
+          std::lock_guard<std::mutex> lock(search_progress_mutex);
+          search_finished = true;
+          pending_search_progress.reset();
+        }
+        std::lock_guard<std::mutex> visualization_lock(visualization_mutex);
         visualizer.QueueHybridPath(path);
         visualizer.Trigger();
         ROS_INFO("Hybrid A* path published after %.3f s; continuing with "
                  "initial guess and NLP", elapsed);
-      });
+      },
+      show_hybrid_search
+          ? planning_platform::PlanningPipeline::HybridProgressCallback(
+                [&](planning::HybridSearchProgress progress) {
+                  std::lock_guard<std::mutex> lock(search_progress_mutex);
+                  if (search_finished) return;
+                  pending_search_progress =
+                      std::make_shared<planning::HybridSearchProgress>(
+                          std::move(progress));
+                })
+          : planning_platform::PlanningPipeline::HybridProgressCallback{});
   ROS_INFO("Initial guess %s; NLP nodes: %zu; elapsed: %.3f s",
            result.initial_guess_succeeded ? "succeeded" : "failed",
            result.initial_guess.nodes.size(), result.initial_guess_elapsed);

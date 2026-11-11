@@ -4,6 +4,7 @@
   <arg name="playback_speed" default="1.0"/>
   <arg name="swept_area_resolution" default="0.005"/>
   <arg name="save_debug_data" default="false"/>
+  <arg name="show_hybrid_search" default="true"/>
   <arg name="tasks_root"
        default="$(find buffered_footprint_planner)/scene/tasks"/>
   <arg name="results_root"
@@ -20,6 +21,8 @@
     <param name="visualization/playback_speed" value="$(arg playback_speed)"/>
     <param name="visualization/swept_area_resolution"
            value="$(arg swept_area_resolution)"/>
+    <param name="visualization/show_hybrid_search"
+           value="$(arg show_hybrid_search)"/>
   </node>
 
   <node if="$(arg launch_rviz)" pkg="rviz" type="rviz" name="rviz"
