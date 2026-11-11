@@ -64,8 +64,8 @@ class SimulationNode {
     QueueVehicle();
     visualizer_.Trigger();
     PublishSceneState();
-    ROS_INFO("Scene editor ready; run keyboard_editor.launch in a separate "
-             "terminal to edit objects and press Enter");
+    ROS_INFO("Scene editor ready; run 'rosrun buffered_footprint_planner "
+             "keyboard_editor.py' in a separate terminal");
     return true;
   }
 

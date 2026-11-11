@@ -47,8 +47,8 @@ class SceneRecorderNode {
     lock_subscriber_ = private_node_.subscribe(
         "/simulation/start_locked", 1,
         &SceneRecorderNode::LockCallback, this);
-    ROS_INFO("Scene recorder ready; run keyboard_editor.launch in a separate "
-             "terminal and press Enter to save one task");
+    ROS_INFO("Scene recorder ready; run 'rosrun buffered_footprint_planner "
+             "keyboard_editor.py' and press Enter to save one task");
     return true;
   }
 

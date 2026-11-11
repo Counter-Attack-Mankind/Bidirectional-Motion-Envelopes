@@ -146,9 +146,9 @@ target_link_libraries(experiment_node experiment_runner planning_pipeline
                       ${catkin_LIBRARIES})
 add_dependencies(experiment_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-add_executable(keyboard_scene_editor simulation/keyboard_scene_editor.cpp)
-target_link_libraries(keyboard_scene_editor ${catkin_LIBRARIES})
-add_dependencies(keyboard_scene_editor ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+catkin_install_python(PROGRAMS scripts/keyboard_editor.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 if(CATKIN_ENABLE_TESTING)
   add_executable(hybrid_astar_timeout_regression
@@ -160,7 +160,7 @@ install(TARGETS common_math common_util hybrid_astar environment visualization_p
                 scene_visualizer trajectory_player footprint_visualizer
                 swept_area_visualizer trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
                 planning_config experiment_runner simulation_node planning_node scene_recorder_node
-                experiment_node keyboard_scene_editor
+                experiment_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
