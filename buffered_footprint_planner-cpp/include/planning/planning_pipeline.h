@@ -20,6 +20,7 @@ struct PlanningRunResult {
   std::string status;
   std::string result_directory;
   double hybrid_elapsed = 0.0;
+  double initial_guess_elapsed = 0.0;
   planning::HybridAStartResult hybrid_path;
   optimizer::Trajectory initial_guess;
   optimizer::InitialGuessDiagnostics initial_diagnostics;

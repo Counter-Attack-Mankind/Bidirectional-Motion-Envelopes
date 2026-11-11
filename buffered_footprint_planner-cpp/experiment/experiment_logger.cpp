@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <sstream>
 
+#include "planning/planning_pipeline.h"
 #include "scene/scene_storage.h"
 
 namespace experiment {
@@ -120,25 +121,91 @@ bool ExperimentLogger::WriteEffectiveParameters(
       << "  linear_solver: " << c.nlp.linear_solver << '\n'
       << "  hessian_approximation: exact\n"
       << "  mu_strategy: adaptive\n"
-      << "  print_level: 5\n";
+      << "  console_print_level: 0\n"
+      << "  file_print_level: 5\n"
+      << "  save_debug_data: " << std::boolalpha << c.nlp.save_debug_data
+      << '\n';
   return static_cast<bool>(out);
 }
 
-bool ExperimentLogger::WriteProgramVersion(const std::string& directory,
-                                           const std::string& mode,
-                                           std::string* error) const {
-  std::ofstream out(std::filesystem::path(directory) / "program_version.txt");
+bool ExperimentLogger::WriteSummary(
+    const std::string& directory, const std::string& mode, int task_id,
+    const planning_platform::PlanningRunResult& result,
+    std::string* error) const {
+  std::ofstream out(std::filesystem::path(directory) / "summary.txt");
   if (!out) {
-    if (error) *error = "Cannot write program version";
+    if (error) *error = "Cannot write experiment summary";
     return false;
   }
-  out << "package=buffered_footprint_planner\n"
+  const double path_length = result.hybrid_path.accumulated_s.empty()
+      ? 0.0 : result.hybrid_path.accumulated_s.back();
+  const auto& initial = result.initial_diagnostics;
+  const auto& nlp = result.optimization;
+  out << std::setprecision(17) << std::boolalpha
+      << "package=buffered_footprint_planner\n"
       << "package_version=0.1.0\n"
       << "mode=" << mode << '\n'
+      << "task_id=" << task_id << '\n'
       << "cxx_standard=17\n"
       << "build_date=" << __DATE__ << '\n'
       << "build_time=" << __TIME__ << '\n'
-      << "git_commit=not_embedded\n";
+      << "git_commit=not_embedded\n"
+      << "scene_valid=" << result.scene_valid << '\n'
+      << "hybrid_astar_succeeded=" << result.hybrid_succeeded << '\n'
+      << "hybrid_astar_timed_out=" << result.hybrid_timed_out << '\n'
+      << "hybrid_astar_time_s=" << result.hybrid_elapsed << '\n'
+      << "hybrid_astar_points=" << result.hybrid_path.x.size() << '\n'
+      << "hybrid_astar_path_length_m=" << path_length << '\n'
+      << "initial_guess_succeeded=" << result.initial_guess_succeeded << '\n'
+      << "initial_guess_time_s=" << result.initial_guess_elapsed << '\n'
+      << "initial_guess_nodes=" << result.initial_guess.nodes.size() << '\n'
+      << "initial_guess_dense_nodes=" << initial.dense_node_count << '\n'
+      << "initial_guess_min_dt_s=" << initial.min_dt << '\n'
+      << "initial_guess_max_dt_s=" << initial.max_dt << '\n'
+      << "initial_guess_total_time_s=" << initial.total_time << '\n'
+      << "initial_guess_max_euler_residual=" << initial.max_euler_residual << '\n'
+      << "initial_guess_max_footprint_violation="
+      << initial.max_footprint_violation << '\n'
+      << "nlp_solver_succeeded=" << nlp.solver_succeeded << '\n'
+      << "nlp_validated_success=" << nlp.success << '\n'
+      << "nlp_status=" << nlp.status << '\n'
+      << "nlp_iterations=" << nlp.iterations << '\n'
+      << "nlp_solve_time_s=" << nlp.solve_time << '\n'
+      << "nlp_objective=" << nlp.objective << '\n'
+      << "nlp_nodes=" << result.initial_guess.nodes.size() << '\n'
+      << "nlp_solver_stats_available=" << nlp.solver_stats_available << '\n'
+      << "nlp_solve_time_source="
+      << (nlp.solve_time_from_stats ? "opti.stats.t_wall_total"
+                                    : "measured_wall_clock") << '\n'
+      << "nlp_max_dynamics_residual=" << nlp.max_dynamics_residual << '\n'
+      << "nlp_max_dynamics_x_m=" << nlp.diagnostics.dynamics_x_m.value << '\n'
+      << "nlp_max_dynamics_y_m=" << nlp.diagnostics.dynamics_y_m.value << '\n'
+      << "nlp_max_dynamics_theta_rad="
+      << nlp.diagnostics.dynamics_theta_rad.value << '\n'
+      << "nlp_max_dynamics_velocity_mps="
+      << nlp.diagnostics.dynamics_v_mps.value << '\n'
+      << "nlp_max_dynamics_steering_rad="
+      << nlp.diagnostics.dynamics_phi_rad.value << '\n'
+      << "nlp_max_variable_bound_violation="
+      << nlp.max_variable_bound_violation << '\n'
+      << "nlp_max_time_step_bound_s="
+      << nlp.diagnostics.time_step_bound_s.value << '\n'
+      << "nlp_max_footprint_validity_violation="
+      << nlp.max_footprint_validity_violation << '\n'
+      << "nlp_max_ef_distance_equality_m="
+      << nlp.diagnostics.ef_distance_equality_m.value << '\n'
+      << "nlp_max_ef_corner_equality_m="
+      << nlp.diagnostics.ef_corner_equality_m.value << '\n'
+      << "nlp_max_obca_violation=" << nlp.max_obca_violation << '\n'
+      << "nlp_max_obca_separation_m="
+      << nlp.diagnostics.obca_separation_m.value << '\n'
+      << "nlp_max_obca_dual_equality="
+      << nlp.diagnostics.obca_dual_equality.value << '\n'
+      << "nlp_max_map_boundary_violation="
+      << nlp.max_map_boundary_violation << '\n'
+      << "nlp_last_iterate_available=" << nlp.last_iterate_available << '\n'
+      << "run_success=" << result.success << '\n'
+      << "run_status=" << result.status << '\n';
   return static_cast<bool>(out);
 }
 
@@ -221,23 +288,6 @@ bool ExperimentLogger::WriteInitialGuess(
     out << ',' << (dense ? dense->phi_raw : node.phy) << ',' << node.phy << ','
         << raw_w << ',' << node.w << '\n';
   }
-  return static_cast<bool>(out);
-}
-
-bool ExperimentLogger::WriteRunStatus(const std::string& directory,
-                                      const std::string& stage, bool success,
-                                      const std::string& message,
-                                      double elapsed_seconds,
-                                      std::string* error) const {
-  std::ofstream out(std::filesystem::path(directory) / "run_status.txt",
-                    std::ios::app);
-  if (!out) {
-    if (error) *error = "Cannot write run status";
-    return false;
-  }
-  out << std::setprecision(17) << "stage=" << stage
-      << ",success=" << std::boolalpha << success
-      << ",elapsed_s=" << elapsed_seconds << ",message=" << message << '\n';
   return static_cast<bool>(out);
 }
 

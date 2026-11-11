@@ -7,6 +7,10 @@
 #include "planning/planning_config_loader.h"
 #include "scene/scene_snapshot.h"
 
+namespace planning_platform {
+struct PlanningRunResult;
+}
+
 namespace experiment {
 
 class ExperimentLogger {
@@ -21,9 +25,10 @@ class ExperimentLogger {
       const std::string& directory,
       const planning_platform::PlanningConfiguration& configuration,
       std::string* error) const;
-  bool WriteProgramVersion(const std::string& directory,
-                           const std::string& mode,
-                           std::string* error) const;
+  bool WriteSummary(const std::string& directory, const std::string& mode,
+                    int task_id,
+                    const planning_platform::PlanningRunResult& result,
+                    std::string* error) const;
   bool WriteHybridPath(const std::string& directory,
                        const planning::HybridAStartResult& path,
                        std::string* error) const;
@@ -34,9 +39,6 @@ class ExperimentLogger {
                          const optimizer::Trajectory& trajectory,
                          const optimizer::InitialGuessTrace& trace,
                          std::string* error) const;
-  bool WriteRunStatus(const std::string& directory, const std::string& stage,
-                      bool success, const std::string& message,
-                      double elapsed_seconds, std::string* error) const;
 };
 
 }  // namespace experiment

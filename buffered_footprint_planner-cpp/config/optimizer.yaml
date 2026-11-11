@@ -7,3 +7,4 @@ ipopt_max_iterations: 399984
 ipopt_max_cpu_time: 20.0
 ipopt_tolerance: 1.0e-3
 ipopt_linear_solver: ma27
+save_debug_data: false

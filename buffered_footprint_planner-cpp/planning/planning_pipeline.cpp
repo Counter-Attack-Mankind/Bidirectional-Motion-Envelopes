@@ -4,7 +4,6 @@
 #include <filesystem>
 
 #include "experiment/experiment_logger.h"
-#include "optimizer/embodied_footprint.h"
 #include "optimizer/footprint_nlp.h"
 
 namespace planning_platform {
@@ -13,18 +12,6 @@ namespace {
 double SecondsSince(const std::chrono::steady_clock::time_point& start) {
   return std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
       .count();
-}
-
-void ConfigurePendingResult(const optimizer::FootprintNlpConfig& config,
-                            optimizer::OptimizationResult* result) {
-  result->initial_guess_succeeded = true;
-  result->status = "NLP solve started; no terminal status recorded yet";
-  result->configured_max_iterations = config.max_iterations;
-  result->configured_max_cpu_time = config.max_cpu_time;
-  result->configured_tolerance = config.tolerance;
-  result->configured_linear_solver = config.linear_solver;
-  result->configured_hessian_approximation = "exact";
-  result->configured_mu_strategy = "adaptive";
 }
 
 }  // namespace
@@ -46,21 +33,18 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
   }
   logger.WriteSceneCopy(result.result_directory, snapshot, &error);
   logger.WriteEffectiveParameters(result.result_directory, configuration_, &error);
-  logger.WriteProgramVersion(result.result_directory, mode, &error);
-  optimizer::WriteGeometryValidation(
-      configuration_.vehicle,
-      (std::filesystem::path(result.result_directory) /
-       "geometry_validation.csv").string(), &error);
+  logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
+                      &error);
 
   if (!snapshot.Validate(configuration_.vehicle, &error)) {
     result.status = "Scene validation failed: " + error;
-    logger.WriteRunStatus(result.result_directory, "scene_validation", false,
-                          result.status, 0.0, &error);
+    logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
+                        &error);
     return result;
   }
   result.scene_valid = true;
-  logger.WriteRunStatus(result.result_directory, "scene_validation", true,
-                        "valid", 0.0, &error);
+  logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
+                      &error);
 
   ParkingPlannerConfig planner_config = configuration_.planner;
   planner_config.xy_bounds = snapshot.bounds;
@@ -73,76 +57,77 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
       &result.hybrid_path);
   result.hybrid_elapsed = SecondsSince(hybrid_begin);
   result.hybrid_timed_out = planner.timed_out();
-  logger.WriteHybridPath(result.result_directory, result.hybrid_path, &error);
-  const std::string hybrid_status = result.hybrid_timed_out
-      ? "timeout after " + std::to_string(result.hybrid_elapsed) + " s"
-      : (result.hybrid_succeeded ? "succeeded" : "failed");
-  logger.WriteRunStatus(result.result_directory, "hybrid_astar",
-                        result.hybrid_succeeded,
-                        hybrid_status,
-                        result.hybrid_elapsed, &error);
   if (!result.hybrid_succeeded) {
     result.status = result.hybrid_timed_out
         ? "Hybrid A* timeout after " + std::to_string(result.hybrid_elapsed) +
               " s (8.0 s limit)"
         : "Hybrid A* failed";
+    logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
+                        &error);
     return result;
   }
+  logger.WriteHybridPath(result.result_directory, result.hybrid_path, &error);
+  result.status = "Hybrid A* succeeded";
+  logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
+                      &error);
   if (hybrid_complete) {
     hybrid_complete(result.hybrid_path, result.hybrid_elapsed);
   }
 
+  const auto initial_begin = std::chrono::steady_clock::now();
   result.initial_guess_succeeded = optimizer::BuildInitialGuess(
       result.hybrid_path, configuration_.vehicle, configuration_.initial_guess,
       &result.initial_guess, &result.initial_diagnostics, &error,
       &result.initial_trace);
-  logger.WriteDenseTrajectory(result.result_directory, result.initial_trace, &error);
-  optimizer::SaveInitialGuessDiagnostics(
-      (std::filesystem::path(result.result_directory) /
-       "initial_guess_diagnostics.txt").string(),
-      result.initial_diagnostics, &error);
-  logger.WriteRunStatus(result.result_directory, "initial_guess",
-                        result.initial_guess_succeeded,
-                        result.initial_guess_succeeded ? "succeeded" : error,
-                        0.0, &error);
+  result.initial_guess_elapsed = SecondsSince(initial_begin);
   if (!result.initial_guess_succeeded) {
     result.status = "Initial guess failed: " + error;
     result.optimization.status = result.status;
-    optimizer::SaveOptimizationResults(result.result_directory,
-                                       result.initial_guess,
-                                       result.optimization, &error);
+    logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
+                        &error);
     return result;
   }
-
-  optimizer::OptimizationResult pending;
-  ConfigurePendingResult(configuration_.nlp, &pending);
-  optimizer::SaveOptimizationResults(result.result_directory,
-                                     result.initial_guess, pending, &error);
   logger.WriteInitialGuess(result.result_directory, result.initial_guess,
                            result.initial_trace, &error);
+  result.status = "Initial guess succeeded";
+  logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
+                      &error);
 
+  const std::filesystem::path debug_directory =
+      std::filesystem::path(result.result_directory) / "debug";
+  std::error_code filesystem_error;
+  std::filesystem::create_directories(debug_directory, filesystem_error);
+  if (configuration_.nlp.save_debug_data) {
+    logger.WriteDenseTrajectory(debug_directory.string(), result.initial_trace,
+                                &error);
+  }
   const std::string ipopt_log =
-      (std::filesystem::path(result.result_directory) / "ipopt.log").string();
+      (debug_directory / "ipopt.log").string();
   result.optimization = optimizer::SolveFootprintNlp(
       result.initial_guess, configuration_.vehicle,
       snapshot.obstacle_polygons(), snapshot.bounds, configuration_.nlp,
       ipopt_log);
-  optimizer::SaveOptimizationResults(result.result_directory,
-                                     result.initial_guess,
-                                     result.optimization, &error);
-  logger.WriteInitialGuess(result.result_directory, result.initial_guess,
-                           result.initial_trace, &error);
-  optimizer::WriteCollisionValidation(
-      (std::filesystem::path(result.result_directory) /
-       "collision_validation.txt").string(),
-      result.optimization.trajectory, configuration_.vehicle,
-      snapshot.obstacle_polygons(), snapshot.bounds, &error);
-  logger.WriteRunStatus(result.result_directory, "nlp",
-                        result.optimization.success,
-                        result.optimization.status,
-                        result.optimization.solve_time, &error);
   result.success = result.optimization.success;
-  result.status = result.optimization.status;
+  result.status = !result.success && result.optimization.solver_succeeded
+      ? "NLP post-solve validation failed after " + result.optimization.status
+      : result.optimization.status;
+  if (result.success) {
+    optimizer::SaveSuccessfulOptimizationResults(
+        result.result_directory, result.optimization, &error);
+    optimizer::WriteCollisionValidation(
+        (std::filesystem::path(result.result_directory) /
+         "collision_validation.txt").string(),
+        result.optimization.trajectory, configuration_.vehicle,
+        snapshot.obstacle_polygons(), snapshot.bounds, &error);
+    if (!configuration_.nlp.save_debug_data) {
+      std::filesystem::remove_all(debug_directory, filesystem_error);
+    }
+  } else {
+    optimizer::SaveNlpFailureDiagnostics(debug_directory.string(),
+                                         result.optimization, &error);
+  }
+  logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
+                      &error);
   return result;
 }
 

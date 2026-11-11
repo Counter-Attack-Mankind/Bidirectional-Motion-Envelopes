@@ -178,7 +178,20 @@ class PlanningNode {
       visualizer_.Trigger();
     }
     if (!result || result_generation != current_generation) return;
+    ROS_INFO("Initial guess %s; NLP nodes: %zu; elapsed: %.3f s",
+             result->initial_guess_succeeded ? "succeeded" : "failed",
+             result->initial_guess.nodes.size(), result->initial_guess_elapsed);
+    if (result->initial_guess_succeeded) {
+      ROS_INFO("IPOPT status: %s; iterations: %d; elapsed: %.3f s",
+               result->optimization.status.c_str(),
+               result->optimization.iterations,
+               result->optimization.solve_time);
+    }
     if (result->success) {
+      ROS_INFO("Constraint validation passed; max dynamics residual: %.3g; "
+               "max OBCA violation: %.3g",
+               result->optimization.max_dynamics_residual,
+               result->optimization.max_obca_violation);
       std::string error;
       if (!playback_.Start(result->optimization.trajectory, &error)) {
         ROS_ERROR("Live trajectory visualization disabled: %s", error.c_str());
@@ -187,8 +200,12 @@ class PlanningNode {
                result->result_directory.c_str());
     } else {
       playback_.StopAndClear();
-      ROS_ERROR("Live planning failed: %s; results: %s",
-                result->status.c_str(), result->result_directory.c_str());
+      ROS_ERROR("Live planning failed: %s; max dynamics residual: %.3g; "
+                "max OBCA violation: %.3g; results: %s",
+                result->status.c_str(),
+                result->optimization.max_dynamics_residual,
+                result->optimization.max_obca_violation,
+                result->result_directory.c_str());
     }
   }
 

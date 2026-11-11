@@ -9,6 +9,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 #include <casadi/casadi.hpp>
 
@@ -169,11 +170,34 @@ std::string GenericToString(const casadi::GenericType& value) {
 
 double PositiveViolation(double value) { return std::max(0.0, value); }
 
+std::string CompactMessage(const std::string& message) {
+  const std::size_t line_end = message.find_first_of("\r\n");
+  std::string compact = message.substr(0, line_end);
+  if (compact.size() > 300) compact.resize(300);
+  return compact;
+}
+
 void RecordMaximum(double value, const std::string& location,
                    double* maximum, std::string* maximum_location) {
   if (value > *maximum) {
     *maximum = value;
     *maximum_location = location;
+  }
+}
+
+void RecordMaximum(double value, const std::string& location,
+                   MaximumViolation* maximum) {
+  if (value > maximum->value) {
+    maximum->value = value;
+    maximum->location = location;
+  }
+}
+
+void CopyMaximum(const MaximumViolation& source, double* value,
+                 std::string* location) {
+  if (source.value > *value) {
+    *value = source.value;
+    *location = source.location;
   }
 }
 
@@ -556,48 +580,14 @@ OptimizationResult SolveFootprintNlp(
     opti.set_initial(obca_qy, obca_qy_initial);
   }
 
-  casadi::Dict solver_options;
-  solver_options["max_iter"] = config.max_iterations;
-  solver_options["max_cpu_time"] = config.max_cpu_time;
-  solver_options["tol"] = config.tolerance;
-  solver_options["linear_solver"] = config.linear_solver;
-  solver_options["mu_strategy"] = "adaptive";
-  solver_options["print_level"] = 5;
-  if (!ipopt_log_file.empty()) {
-    solver_options["output_file"] = ipopt_log_file;
-    solver_options["file_print_level"] = 5;
-  }
-  casadi::Dict plugin_options;
-  plugin_options["expand"] = true;
-  plugin_options["print_time"] = true;
-  failure_stage = "IPOPT solver initialization";
-  opti.solver("ipopt", plugin_options, solver_options);
-
-  result.model_build_time = std::chrono::duration<double>(
-      std::chrono::steady_clock::now() - model_begin).count();
-  failure_stage = "opti.solve()";
-  solve_begin = std::chrono::steady_clock::now();
-    const casadi::OptiSol solution = opti.solve();
-    result.solve_time = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - solve_begin).count();
-    const auto stats = solution.stats();
-    result.status = GenericToString(stats.at("return_status"));
-    result.iterations = static_cast<int>(stats.at("iter_count"));
-    result.solver_succeeded = result.status.find("Solve_Succeeded") != std::string::npos ||
-                              result.status.find("Solved_To_Acceptable_Level") != std::string::npos;
-    result.objective = static_cast<double>(solution.value(objective));
-    const DM state_value = solution.value(state);
-    const DM dt_value = solution.value(dt);
-    DM lambda_value;
-    DM mu_value;
-    if (obstacle_count > 0) {
-      lambda_value = solution.value(lambda);
-      mu_value = solution.value(mu);
-    }
-    result.trajectory.nodes.resize(node_count);
-    result.trajectory.intervals.resize(interval_count);
+  auto extract_snapshot = [&](const auto& values,
+                              NlpIterateSnapshot* snapshot) {
+    const DM state_value = values.value(state);
+    const DM dt_value = values.value(dt);
+    snapshot->trajectory.nodes.resize(node_count);
+    snapshot->trajectory.intervals.resize(interval_count);
     for (std::size_t i = 0; i < node_count; ++i) {
-      auto& node = result.trajectory.nodes[i];
+      auto& node = snapshot->trajectory.nodes[i];
       node.x = static_cast<double>(state_value(0, i));
       node.y = static_cast<double>(state_value(1, i));
       node.theta = static_cast<double>(state_value(2, i));
@@ -605,107 +595,399 @@ OptimizationResult SolveFootprintNlp(
       node.a = static_cast<double>(state_value(4, i));
       node.phy = static_cast<double>(state_value(5, i));
       node.w = static_cast<double>(state_value(6, i));
-      const std::array<std::pair<const char*, double>, 4> variable_violations{{
-          {"v", PositiveViolation(std::abs(node.v) - vehicle.v_max)},
-          {"a", PositiveViolation(std::abs(node.a) - vehicle.a_max)},
-          {"phy", PositiveViolation(std::abs(node.phy) - vehicle.delta_max)},
-          {"w", PositiveViolation(std::abs(node.w) - vehicle.omega_max)}}};
-      result.variable_bound_check_count += variable_violations.size();
-      for (const auto& violation : variable_violations) {
-        RecordMaximum(violation.second,
-                      "node=" + std::to_string(i) + ",variable=" + violation.first,
-                      &result.max_variable_bound_violation,
-                      &result.max_variable_bound_location);
-      }
     }
+    snapshot->k.resize(interval_count);
+    snapshot->s.resize(interval_count);
+    snapshot->splus.resize(interval_count);
+    snapshot->sminus.resize(interval_count);
+    snapshot->up.resize(interval_count);
+    snapshot->down.resize(interval_count);
+    snapshot->left.resize(interval_count);
+    snapshot->right.resize(interval_count);
+    snapshot->corners.resize(interval_count);
+    const DM k_value = values.value(k);
+    const DM s_value = values.value(s);
+    const DM splus_value = values.value(splus);
+    const DM sminus_value = values.value(sminus);
+    const DM up_value = values.value(up);
+    const DM down_value = values.value(down);
+    const DM left_value = values.value(left);
+    const DM right_value = values.value(right);
+    const DM ax_value = values.value(AX);
+    const DM ay_value = values.value(AY);
+    const DM bx_value = values.value(BX);
+    const DM by_value = values.value(BY);
+    const DM cx_value = values.value(CX);
+    const DM cy_value = values.value(CY);
+    const DM dx_value = values.value(DX);
+    const DM dy_value = values.value(DY);
     for (std::size_t i = 0; i < interval_count; ++i) {
       const double interval_dt = static_cast<double>(dt_value(i));
       auto footprint = ComputeEmbodiedFootprint(
-          result.trajectory.nodes[i], interval_dt, vehicle);
+          snapshot->trajectory.nodes[i], interval_dt, vehicle);
       footprint.gear = initial.intervals[i].gear;
-      result.trajectory.intervals[i] = footprint;
-      const auto footprint_validity = EvaluateFootprintValidity(footprint, vehicle);
-      result.footprint_validity_check_count += 5;
-      RecordMaximum(footprint_validity.max_violation(),
-                    "interval=" + std::to_string(i),
+      snapshot->trajectory.intervals[i] = footprint;
+      snapshot->k[i] = static_cast<double>(k_value(i));
+      snapshot->s[i] = static_cast<double>(s_value(i));
+      snapshot->splus[i] = static_cast<double>(splus_value(i));
+      snapshot->sminus[i] = static_cast<double>(sminus_value(i));
+      snapshot->up[i] = static_cast<double>(up_value(i));
+      snapshot->down[i] = static_cast<double>(down_value(i));
+      snapshot->left[i] = static_cast<double>(left_value(i));
+      snapshot->right[i] = static_cast<double>(right_value(i));
+      snapshot->corners[i] = {{
+          static_cast<double>(ax_value(i)), static_cast<double>(ay_value(i)),
+          static_cast<double>(bx_value(i)), static_cast<double>(by_value(i)),
+          static_cast<double>(cx_value(i)), static_cast<double>(cy_value(i)),
+          static_cast<double>(dx_value(i)), static_cast<double>(dy_value(i))}};
+    }
+    snapshot->total_time = static_cast<double>(values.value(tf));
+    if (obstacle_count > 0) {
+      const DM lambda_value = values.value(lambda);
+      const DM mu_value = values.value(mu);
+      const DM qx_value = values.value(obca_qx);
+      const DM qy_value = values.value(obca_qy);
+      snapshot->lambda.resize(obca_column_count);
+      snapshot->mu.resize(obca_column_count);
+      snapshot->obca_qx.resize(obca_column_count);
+      snapshot->obca_qy.resize(obca_column_count);
+      for (std::size_t column = 0; column < obca_column_count; ++column) {
+        for (std::size_t edge = 0; edge < 4; ++edge) {
+          snapshot->lambda[column][edge] =
+              static_cast<double>(lambda_value(edge, column));
+          snapshot->mu[column][edge] =
+              static_cast<double>(mu_value(edge, column));
+        }
+        snapshot->obca_qx[column] = static_cast<double>(qx_value(column));
+        snapshot->obca_qy[column] = static_cast<double>(qy_value(column));
+      }
+    }
+    snapshot->available = true;
+  };
+
+  auto evaluate_snapshot = [&](const NlpIterateSnapshot& snapshot) {
+    auto& diagnostics = result.diagnostics;
+    double dt_sum = 0.0;
+    for (std::size_t i = 0; i < node_count; ++i) {
+      const auto& node = snapshot.trajectory.nodes[i];
+      const std::string location = "node=" + std::to_string(i);
+      RecordMaximum(PositiveViolation(std::abs(node.v) - vehicle.v_max),
+                    location, &diagnostics.velocity_bound_mps);
+      RecordMaximum(PositiveViolation(std::abs(node.a) - vehicle.a_max),
+                    location, &diagnostics.acceleration_bound_mps2);
+      RecordMaximum(PositiveViolation(std::abs(node.phy) - vehicle.delta_max),
+                    location, &diagnostics.steering_bound_rad);
+      RecordMaximum(PositiveViolation(std::abs(node.w) - vehicle.omega_max),
+                    location, &diagnostics.steering_rate_bound_radps);
+    }
+    auto record_endpoint = [&](const TrajectoryNode& actual,
+                               const TrajectoryNode& expected,
+                               const std::string& endpoint) {
+      RecordMaximum(std::abs(actual.x - expected.x), endpoint,
+                    &diagnostics.endpoint_x_m);
+      RecordMaximum(std::abs(actual.y - expected.y), endpoint,
+                    &diagnostics.endpoint_y_m);
+      RecordMaximum(std::abs(actual.theta - expected.theta), endpoint,
+                    &diagnostics.endpoint_theta_rad);
+      RecordMaximum(std::abs(actual.v), endpoint,
+                    &diagnostics.endpoint_v_mps);
+      RecordMaximum(std::abs(actual.a), endpoint,
+                    &diagnostics.endpoint_acceleration_mps2);
+      RecordMaximum(std::abs(actual.phy), endpoint,
+                    &diagnostics.endpoint_phi_rad);
+      RecordMaximum(std::abs(actual.w), endpoint,
+                    &diagnostics.endpoint_steering_rate_radps);
+    };
+    record_endpoint(snapshot.trajectory.nodes.front(), initial.nodes.front(),
+                    "start");
+    record_endpoint(snapshot.trajectory.nodes.back(), initial.nodes.back(),
+                    "goal");
+
+    for (std::size_t i = 0; i < interval_count; ++i) {
+      const auto& first = snapshot.trajectory.nodes[i];
+      const auto& second = snapshot.trajectory.nodes[i + 1];
+      const double interval_dt = snapshot.trajectory.intervals[i].dt;
+      const auto& computed_footprint = snapshot.trajectory.intervals[i];
+      const std::string interval = "interval=" + std::to_string(i);
+      dt_sum += interval_dt;
+      RecordMaximum(std::max(PositiveViolation(config.min_dt - interval_dt),
+                             PositiveViolation(interval_dt - config.max_dt)),
+                    interval, &diagnostics.time_step_bound_s);
+      RecordMaximum(std::abs(second.x - first.x -
+                             first.v * interval_dt * std::cos(first.theta)),
+                    interval, &diagnostics.dynamics_x_m);
+      RecordMaximum(std::abs(second.y - first.y -
+                             first.v * interval_dt * std::sin(first.theta)),
+                    interval, &diagnostics.dynamics_y_m);
+      RecordMaximum(std::abs(second.theta - first.theta - interval_dt * first.v *
+                             std::tan(first.phy) / vehicle.wheel_base),
+                    interval, &diagnostics.dynamics_theta_rad);
+      RecordMaximum(std::abs(second.v - first.v - interval_dt * first.a),
+                    interval, &diagnostics.dynamics_v_mps);
+      RecordMaximum(std::abs(second.phy - first.phy - interval_dt * first.w),
+                    interval, &diagnostics.dynamics_phi_rad);
+      const auto legacy_validity =
+          EvaluateFootprintValidity(computed_footprint, vehicle);
+      RecordMaximum(legacy_validity.max_violation(), interval,
                     &result.max_footprint_validity_violation,
                     &result.max_footprint_validity_location);
-      const auto& first = result.trajectory.nodes[i];
-      const auto& second = result.trajectory.nodes[i + 1];
-      const std::array<double, 5> dynamics{{
-          std::abs(second.x - first.x - first.v * interval_dt * std::cos(first.theta)),
-          std::abs(second.y - first.y - first.v * interval_dt * std::sin(first.theta)),
-          std::abs(second.v - first.v - interval_dt * first.a),
-          std::abs(second.theta - first.theta - interval_dt * first.v *
-                       std::tan(first.phy) / vehicle.wheel_base),
-          std::abs(second.phy - first.phy - interval_dt * first.w)}};
-      result.dynamics_check_count += dynamics.size();
-      for (std::size_t equation = 0; equation < dynamics.size(); ++equation) {
-        RecordMaximum(dynamics[equation],
-                      "interval=" + std::to_string(i) +
-                          ",equation=" + std::to_string(equation),
-                      &result.max_dynamics_residual,
-                      &result.max_dynamics_location);
+      for (std::size_t corner = 0; corner < 4; ++corner) {
+        const auto& point = computed_footprint.corners[corner];
+        RecordMaximum(std::max({PositiveViolation(bounds[0] - point.x()),
+                                PositiveViolation(point.x() - bounds[1]),
+                                PositiveViolation(bounds[2] - point.y()),
+                                PositiveViolation(point.y() - bounds[3])}),
+                      interval + ",corner=" + std::to_string(corner),
+                      &result.max_map_boundary_violation,
+                      &result.max_map_boundary_location);
       }
-      for (std::size_t corner_index = 0;
-           corner_index < footprint.corners.size(); ++corner_index) {
-        const auto& corner = footprint.corners[corner_index];
-        const std::array<double, 4> boundary_violations{{
-            PositiveViolation(bounds[0] - corner.x()),
-            PositiveViolation(corner.x() - bounds[1]),
-            PositiveViolation(bounds[2] - corner.y()),
-            PositiveViolation(corner.y() - bounds[3])}};
-        result.map_boundary_check_count += boundary_violations.size();
-        for (std::size_t side = 0; side < boundary_violations.size(); ++side) {
-          RecordMaximum(boundary_violations[side],
-                        "interval=" + std::to_string(i) +
-                            ",corner=" + std::to_string(corner_index) +
-                            ",side=" + std::to_string(side),
-                        &result.max_map_boundary_violation,
-                        &result.max_map_boundary_location);
-        }
+
+      const double computed_k = std::tan(first.phy) / vehicle.wheel_base;
+      const double computed_s = first.v * interval_dt;
+      const double computed_splus = std::max(computed_s, 0.0);
+      const double computed_sminus = std::max(-computed_s, 0.0);
+      const double abs_k = std::abs(snapshot.k[i]);
+      const double computed_up = snapshot.splus[i] +
+                                 half_width * abs_k * snapshot.splus[i];
+      const double computed_down = snapshot.sminus[i] +
+                                   half_width * abs_k * snapshot.sminus[i];
+      const double computed_left =
+          std::max(-rear * snapshot.k[i] * snapshot.splus[i],
+                   (front + 0.5 * snapshot.splus[i]) * snapshot.k[i] *
+                       snapshot.splus[i]) +
+          std::max(-front * snapshot.k[i] * snapshot.sminus[i],
+                   (rear + 0.5 * snapshot.sminus[i]) * snapshot.k[i] *
+                       snapshot.sminus[i]);
+      const double computed_right =
+          std::max(rear * snapshot.k[i] * snapshot.splus[i],
+                   -(front + 0.5 * snapshot.splus[i]) * snapshot.k[i] *
+                       snapshot.splus[i]) +
+          std::max(front * snapshot.k[i] * snapshot.sminus[i],
+                   -(rear + 0.5 * snapshot.sminus[i]) * snapshot.k[i] *
+                       snapshot.sminus[i]);
+      RecordMaximum(std::abs(snapshot.k[i] - computed_k), interval,
+                    &diagnostics.ef_curvature_equality_1pm);
+      const std::array<std::pair<const char*, double>, 7> distance_equalities{{
+          {"s", std::abs(snapshot.s[i] - computed_s)},
+          {"splus", std::abs(snapshot.splus[i] - computed_splus)},
+          {"sminus", std::abs(snapshot.sminus[i] - computed_sminus)},
+          {"up", std::abs(snapshot.up[i] - computed_up)},
+          {"down", std::abs(snapshot.down[i] - computed_down)},
+          {"left", std::abs(snapshot.left[i] - computed_left)},
+          {"right", std::abs(snapshot.right[i] - computed_right)}}};
+      for (const auto& equality : distance_equalities) {
+        RecordMaximum(equality.second, interval + ",variable=" + equality.first,
+                      &diagnostics.ef_distance_equality_m);
       }
+      FootprintInterval raw_footprint;
+      raw_footprint.k = snapshot.k[i];
+      raw_footprint.splus = snapshot.splus[i];
+      raw_footprint.sminus = snapshot.sminus[i];
+      raw_footprint.up = snapshot.up[i];
+      raw_footprint.down = snapshot.down[i];
+      raw_footprint.left = snapshot.left[i];
+      raw_footprint.right = snapshot.right[i];
+      const double c = std::cos(first.theta);
+      const double sn = std::sin(first.theta);
+      const std::array<double, 8> computed_corners{{
+          first.x + (front + raw_footprint.up) * c -
+              (half_width + raw_footprint.left) * sn,
+          first.y + (front + raw_footprint.up) * sn +
+              (half_width + raw_footprint.left) * c,
+          first.x + (front + raw_footprint.up) * c +
+              (half_width + raw_footprint.right) * sn,
+          first.y + (front + raw_footprint.up) * sn -
+              (half_width + raw_footprint.right) * c,
+          first.x - (rear + raw_footprint.down) * c +
+              (half_width + raw_footprint.right) * sn,
+          first.y - (rear + raw_footprint.down) * sn -
+              (half_width + raw_footprint.right) * c,
+          first.x - (rear + raw_footprint.down) * c -
+              (half_width + raw_footprint.left) * sn,
+          first.y - (rear + raw_footprint.down) * sn +
+              (half_width + raw_footprint.left) * c}};
+      for (std::size_t coordinate = 0; coordinate < 8; ++coordinate) {
+        RecordMaximum(std::abs(snapshot.corners[i][coordinate] -
+                               computed_corners[coordinate]),
+                      interval + ",corner_coordinate=" +
+                          std::to_string(coordinate),
+                      &diagnostics.ef_corner_equality_m);
+      }
+      const auto validity = EvaluateFootprintValidity(raw_footprint, vehicle);
+      RecordMaximum(PositiveViolation(validity.arc), interval,
+                    &diagnostics.ef_arc);
+      RecordMaximum(PositiveViolation(validity.forward_cond1), interval,
+                    &diagnostics.ef_forward_cond1);
+      RecordMaximum(PositiveViolation(validity.forward_cond2), interval,
+                    &diagnostics.ef_forward_cond2);
+      RecordMaximum(PositiveViolation(validity.reverse_cond1), interval,
+                    &diagnostics.ef_reverse_cond1);
+      RecordMaximum(PositiveViolation(validity.reverse_cond2), interval,
+                    &diagnostics.ef_reverse_cond2);
+      for (std::size_t corner = 0; corner < 4; ++corner) {
+        const double x = snapshot.corners[i][2 * corner];
+        const double y = snapshot.corners[i][2 * corner + 1];
+        RecordMaximum(std::max({PositiveViolation(bounds[0] - x),
+                                PositiveViolation(x - bounds[1]),
+                                PositiveViolation(bounds[2] - y),
+                                PositiveViolation(y - bounds[3])}),
+                      interval + ",corner=" + std::to_string(corner),
+                      &diagnostics.map_boundary_m);
+      }
+
       for (std::size_t obstacle = 0; obstacle < obstacle_count; ++obstacle) {
         const std::size_t column = i * obstacle_count + obstacle;
-        double qx = 0.0, qy = 0.0, certificate = 0.0;
+        const std::string location = interval + ",obstacle=" +
+                                     std::to_string(obstacle);
+        double qx_definition = 0.0;
+        double qy_definition = 0.0;
+        double certificate = 0.0;
         for (std::size_t edge = 0; edge < 4; ++edge) {
-          const double lam = static_cast<double>(lambda_value(edge, column));
-          qx += halfspaces[obstacle].a[edge][0] * lam;
-          qy += halfspaces[obstacle].a[edge][1] * lam;
-          certificate +=
+          const double lam = snapshot.lambda[column][edge];
+          qx_definition += halfspaces[obstacle].a[edge][0] * lam;
+          qy_definition += halfspaces[obstacle].a[edge][1] * lam;
+          certificate += (halfspaces[obstacle].a[edge][0] * first.x +
+                          halfspaces[obstacle].a[edge][1] * first.y -
+                          halfspaces[obstacle].b[edge]) * lam;
+          RecordMaximum(PositiveViolation(-lam),
+                        location + ",lambda_edge=" + std::to_string(edge),
+                        &diagnostics.obca_nonnegative);
+          RecordMaximum(PositiveViolation(-snapshot.mu[column][edge]),
+                        location + ",mu_edge=" + std::to_string(edge),
+                        &diagnostics.obca_nonnegative);
+        }
+        const double qx = snapshot.obca_qx[column];
+        const double qy = snapshot.obca_qy[column];
+        RecordMaximum(std::max(std::abs(qx - qx_definition),
+                               std::abs(qy - qy_definition)),
+                      location, &diagnostics.obca_q_definition);
+        certificate -= (front + snapshot.up[i]) * snapshot.mu[column][0] +
+                       (rear + snapshot.down[i]) * snapshot.mu[column][1] +
+                       (half_width + snapshot.left[i]) * snapshot.mu[column][2] +
+                       (half_width + snapshot.right[i]) * snapshot.mu[column][3];
+        RecordMaximum(PositiveViolation(config.dmin - certificate), location,
+                      &diagnostics.obca_separation_m);
+        const double dual_x = snapshot.mu[column][0] -
+                              snapshot.mu[column][1] + c * qx + sn * qy;
+        const double dual_y = snapshot.mu[column][2] -
+                              snapshot.mu[column][3] - sn * qx + c * qy;
+        RecordMaximum(std::max(std::abs(dual_x), std::abs(dual_y)), location,
+                      &diagnostics.obca_dual_equality);
+        RecordMaximum(PositiveViolation(qx * qx + qy * qy - 1.0), location,
+                      &diagnostics.obca_norm);
+
+        double legacy_certificate = 0.0;
+        for (std::size_t edge = 0; edge < 4; ++edge) {
+          legacy_certificate +=
               (halfspaces[obstacle].a[edge][0] * first.x +
                halfspaces[obstacle].a[edge][1] * first.y -
-               halfspaces[obstacle].b[edge]) * lam;
+               halfspaces[obstacle].b[edge]) *
+              snapshot.lambda[column][edge];
         }
-        certificate -= (front + footprint.up) * static_cast<double>(mu_value(0, column)) +
-                       (rear + footprint.down) * static_cast<double>(mu_value(1, column)) +
-                       (half_width + footprint.left) * static_cast<double>(mu_value(2, column)) +
-                       (half_width + footprint.right) * static_cast<double>(mu_value(3, column));
-        result.obca_check_count += 4;
-        RecordMaximum(PositiveViolation(config.dmin - certificate),
-                      "interval=" + std::to_string(i) + ",obstacle=" +
-                          std::to_string(obstacle) + ",constraint=distance",
+        legacy_certificate -=
+            (front + computed_footprint.up) * snapshot.mu[column][0] +
+            (rear + computed_footprint.down) * snapshot.mu[column][1] +
+            (half_width + computed_footprint.left) * snapshot.mu[column][2] +
+            (half_width + computed_footprint.right) * snapshot.mu[column][3];
+        RecordMaximum(PositiveViolation(config.dmin - legacy_certificate),
+                      location + ",constraint=distance",
                       &result.max_obca_violation, &result.max_obca_location);
-        RecordMaximum(PositiveViolation(qx * qx + qy * qy - 1.0),
-                      "interval=" + std::to_string(i) + ",obstacle=" +
-                          std::to_string(obstacle) + ",constraint=norm",
+        const double legacy_dual_x = snapshot.mu[column][0] -
+            snapshot.mu[column][1] + c * qx_definition + sn * qy_definition;
+        const double legacy_dual_y = snapshot.mu[column][2] -
+            snapshot.mu[column][3] - sn * qx_definition + c * qy_definition;
+        RecordMaximum(std::max(std::abs(legacy_dual_x),
+                               std::abs(legacy_dual_y)),
+                      location + ",constraint=dual",
                       &result.max_obca_violation, &result.max_obca_location);
-        const double longitudinal = std::cos(first.theta) * qx +
-                                    std::sin(first.theta) * qy;
-        const double lateral = -std::sin(first.theta) * qx +
-                               std::cos(first.theta) * qy;
-        RecordMaximum(std::abs(static_cast<double>(mu_value(0, column)) -
-                               static_cast<double>(mu_value(1, column)) + longitudinal),
-                      "interval=" + std::to_string(i) + ",obstacle=" +
-                          std::to_string(obstacle) + ",constraint=dual_x",
-                      &result.max_obca_violation, &result.max_obca_location);
-        RecordMaximum(std::abs(static_cast<double>(mu_value(2, column)) -
-                               static_cast<double>(mu_value(3, column)) + lateral),
-                      "interval=" + std::to_string(i) + ",obstacle=" +
-                          std::to_string(obstacle) + ",constraint=dual_y",
+        RecordMaximum(PositiveViolation(qx_definition * qx_definition +
+                                        qy_definition * qy_definition - 1.0),
+                      location + ",constraint=norm",
                       &result.max_obca_violation, &result.max_obca_location);
       }
     }
+    RecordMaximum(std::abs(snapshot.total_time - dt_sum), "tf=sum(dt)",
+                  &diagnostics.total_time_equality_s);
+    RecordMaximum(std::max(PositiveViolation(-snapshot.total_time),
+                           PositiveViolation(snapshot.total_time -
+                                             config.total_time_limit)),
+                  "tf_bounds", &diagnostics.total_time_bound_s);
+
+    const std::array<const MaximumViolation*, 5> dynamics{{
+        &diagnostics.dynamics_x_m, &diagnostics.dynamics_y_m,
+        &diagnostics.dynamics_theta_rad, &diagnostics.dynamics_v_mps,
+        &diagnostics.dynamics_phi_rad}};
+    for (const auto* item : dynamics) {
+      CopyMaximum(*item, &result.max_dynamics_residual,
+                  &result.max_dynamics_location);
+    }
+    const std::array<const MaximumViolation*, 4> bounds_diagnostics{{
+        &diagnostics.velocity_bound_mps, &diagnostics.acceleration_bound_mps2,
+        &diagnostics.steering_bound_rad,
+        &diagnostics.steering_rate_bound_radps}};
+    for (const auto* item : bounds_diagnostics) {
+      CopyMaximum(*item, &result.max_variable_bound_violation,
+                  &result.max_variable_bound_location);
+    }
+    result.dynamics_check_count = 5 * interval_count;
+    result.variable_bound_check_count = 4 * node_count;
+    result.footprint_validity_check_count = 5 * interval_count;
+    result.obca_check_count = 4 * obca_column_count;
+    result.map_boundary_check_count = 16 * interval_count;
+  };
+
+  casadi::Dict solver_options;
+  solver_options["max_iter"] = config.max_iterations;
+  solver_options["max_cpu_time"] = config.max_cpu_time;
+  solver_options["tol"] = config.tolerance;
+  solver_options["linear_solver"] = config.linear_solver;
+  solver_options["mu_strategy"] = "adaptive";
+  solver_options["print_level"] = 0;
+  solver_options["sb"] = "yes";
+  if (!ipopt_log_file.empty()) {
+    solver_options["output_file"] = ipopt_log_file;
+    solver_options["file_print_level"] = 5;
+  }
+  casadi::Dict plugin_options;
+  plugin_options["expand"] = true;
+  plugin_options["print_time"] = false;
+  failure_stage = "IPOPT solver initialization";
+  opti.solver("ipopt", plugin_options, solver_options);
+
+  result.model_build_time = std::chrono::duration<double>(
+      std::chrono::steady_clock::now() - model_begin).count();
+  failure_stage = "opti.solve()";
+  solve_begin = std::chrono::steady_clock::now();
+  auto read_stats = [&](const casadi::Dict& stats) {
+    result.solver_stats_available = true;
+    const auto status = stats.find("return_status");
+    if (status != stats.end()) result.status = GenericToString(status->second);
+    const auto iterations = stats.find("iter_count");
+    if (iterations != stats.end()) {
+      result.iterations = static_cast<int>(iterations->second);
+    }
+    const auto wall_time = stats.find("t_wall_total");
+    if (wall_time != stats.end()) {
+      const double stats_time = static_cast<double>(wall_time->second);
+      if (std::isfinite(stats_time) && stats_time >= 0.0) {
+        result.solve_time = stats_time;
+        result.solve_time_from_stats = true;
+      }
+    }
+  };
+  try {
+    const casadi::OptiSol solution = opti.solve();
+    result.solve_time = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - solve_begin).count();
+    read_stats(solution.stats());
+    result.solver_succeeded =
+        result.status.find("Solve_Succeeded") != std::string::npos ||
+        result.status.find("Solved_To_Acceptable_Level") != std::string::npos;
+    result.objective = static_cast<double>(solution.value(objective));
+    NlpIterateSnapshot solution_snapshot;
+    extract_snapshot(solution, &solution_snapshot);
+    evaluate_snapshot(solution_snapshot);
+    result.trajectory = solution_snapshot.trajectory;
     const double residual_limit = std::max(1e-4, 10.0 * config.tolerance);
     result.success = result.solver_succeeded &&
                      result.max_dynamics_residual <= residual_limit &&
@@ -713,34 +995,63 @@ OptimizationResult SolveFootprintNlp(
                      result.max_footprint_validity_violation <= residual_limit &&
                      result.max_obca_violation <= residual_limit &&
                      result.max_map_boundary_violation <= residual_limit;
-  } catch (const std::exception& exception) {
-    if (failure_stage != "opti.solve()") {
-      result.model_build_time = std::chrono::duration<double>(
-          std::chrono::steady_clock::now() - model_begin).count();
+    if (!result.success) {
+      result.last_iterate = std::move(solution_snapshot);
+      result.last_iterate_available = result.last_iterate.available;
     }
-    if (failure_stage == "opti.solve()") {
-      result.solve_time = std::chrono::duration<double>(
-          std::chrono::steady_clock::now() - solve_begin).count();
+  } catch (const std::exception& solve_exception) {
+    result.solve_time = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - solve_begin).count();
+    result.status = "opti.solve() failed";
+    try {
+      read_stats(opti.stats());
+    } catch (const std::exception& stats_exception) {
+      result.diagnostic_error =
+          "solver stats unavailable: " + std::string(stats_exception.what());
     }
-    result.status = failure_stage + " failed: " + exception.what();
+    if (result.status == "opti.solve() failed") {
+      result.status += ": " + CompactMessage(solve_exception.what());
+    }
+    try {
+      const casadi::OptiAdvanced debug = opti.debug();
+      extract_snapshot(debug, &result.last_iterate);
+      result.last_iterate_available = result.last_iterate.available;
+      evaluate_snapshot(result.last_iterate);
+    } catch (const std::exception& debug_exception) {
+      result.last_iterate.extraction_error = debug_exception.what();
+      if (!result.diagnostic_error.empty()) result.diagnostic_error += "; ";
+      result.diagnostic_error +=
+          "last iterate unavailable: " + std::string(debug_exception.what());
+    } catch (...) {
+      result.last_iterate.extraction_error = "unknown exception";
+      if (!result.diagnostic_error.empty()) result.diagnostic_error += "; ";
+      result.diagnostic_error += "last iterate unavailable: unknown exception";
+    }
   } catch (...) {
-    if (failure_stage != "opti.solve()") {
-      result.model_build_time = std::chrono::duration<double>(
-          std::chrono::steady_clock::now() - model_begin).count();
-    }
-    if (failure_stage == "opti.solve()") {
-      result.solve_time = std::chrono::duration<double>(
-          std::chrono::steady_clock::now() - solve_begin).count();
-    }
+    result.solve_time = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - solve_begin).count();
+    result.status = "opti.solve() failed: unknown exception";
+  }
+  } catch (const std::exception& exception) {
+    result.model_build_time = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - model_begin).count();
+    result.status = failure_stage + " failed: " +
+                    CompactMessage(exception.what());
+  } catch (...) {
+    result.model_build_time = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - model_begin).count();
     result.status = failure_stage + " failed: unknown exception";
   }
   return result;
 }
 
-bool SaveOptimizationResults(const std::string& result_directory,
-                             const Trajectory& initial,
-                             const OptimizationResult& result,
-                             std::string* error) {
+bool SaveSuccessfulOptimizationResults(const std::string& result_directory,
+                                       const OptimizationResult& result,
+                                       std::string* error) {
+  if (!result.success || result.trajectory.nodes.empty()) {
+    if (error) *error = "Refusing to save an unsuccessful NLP trajectory";
+    return false;
+  }
   namespace fs = std::filesystem;
   std::error_code code;
   fs::create_directories(result_directory, code);
@@ -769,8 +1080,7 @@ bool SaveOptimizationResults(const std::string& result_directory,
     }
     return true;
   };
-  if (!write_trajectory(fs::path(result_directory) / "initial_guess.csv", initial) ||
-      !write_trajectory(fs::path(result_directory) / "optimized_trajectory.csv",
+  if (!write_trajectory(fs::path(result_directory) / "optimized_trajectory.csv",
                         result.trajectory)) {
     if (error) *error = "Cannot write trajectory CSV";
     return false;
@@ -789,45 +1099,132 @@ bool SaveOptimizationResults(const std::string& result_directory,
     }
     footprints << '\n';
   }
-  std::ofstream summary(fs::path(result_directory) / "solver_summary.txt");
-  summary << std::boolalpha
-          << "initial_guess_succeeded=" << result.initial_guess_succeeded << '\n'
-          << "solver_succeeded=" << result.solver_succeeded << '\n'
-          << "validated_success=" << result.success << '\n'
-          << "status=" << result.status << '\n'
-          << "iterations=" << result.iterations << '\n'
-          << "solve_time_s=" << result.solve_time << '\n'
-          << "objective=" << result.objective << '\n'
-          << "max_dynamics_residual=" << result.max_dynamics_residual << '\n'
-          << "max_variable_bound_violation=" << result.max_variable_bound_violation << '\n'
-          << "max_footprint_validity_violation=" << result.max_footprint_validity_violation << '\n'
-          << "max_obca_violation=" << result.max_obca_violation << '\n'
-          << "max_map_boundary_violation=" << result.max_map_boundary_violation << '\n';
-  summary << "dynamics_check_count=" << result.dynamics_check_count << '\n'
-          << "max_dynamics_location=" << result.max_dynamics_location << '\n'
-          << "variable_bound_check_count=" << result.variable_bound_check_count << '\n'
-          << "max_variable_bound_location=" << result.max_variable_bound_location << '\n'
-          << "footprint_validity_check_count=" << result.footprint_validity_check_count << '\n'
-          << "max_footprint_validity_location=" << result.max_footprint_validity_location << '\n'
-          << "obca_check_count=" << result.obca_check_count << '\n'
-          << "max_obca_location=" << result.max_obca_location << '\n'
-          << "map_boundary_check_count=" << result.map_boundary_check_count << '\n'
-          << "max_map_boundary_location=" << result.max_map_boundary_location << '\n'
-          << "ipopt_max_iter=" << result.configured_max_iterations << '\n'
-          << "ipopt_max_cpu_time_s=" << result.configured_max_cpu_time << '\n'
-          << "ipopt_tolerance=" << result.configured_tolerance << '\n'
-          << "ipopt_linear_solver=" << result.configured_linear_solver << '\n'
-          << "ipopt_hessian_approximation="
-          << result.configured_hessian_approximation << '\n'
-          << "ipopt_mu_strategy=" << result.configured_mu_strategy << '\n'
-          << "model_obstacle_count=" << result.model_obstacle_count << '\n'
-          << "model_variable_count=" << result.model_variable_count << '\n'
-          << "model_constraint_count=" << result.model_constraint_count << '\n'
-          << "model_obca_variable_count=" << result.model_obca_variable_count << '\n'
-          << "model_build_time_s=" << result.model_build_time << '\n'
-          << "matlab_interface=AMPL_IPOPT\n"
-          << "cpp_interface=CasADi_Opti_IPOPT\n";
-  return static_cast<bool>(footprints) && static_cast<bool>(summary);
+  return static_cast<bool>(footprints);
+}
+
+bool SaveNlpFailureDiagnostics(const std::string& debug_directory,
+                               const OptimizationResult& result,
+                               std::string* error) {
+  namespace fs = std::filesystem;
+  std::error_code code;
+  fs::create_directories(debug_directory, code);
+  if (code) {
+    if (error) *error = code.message();
+    return false;
+  }
+  std::ofstream report(fs::path(debug_directory) /
+                       "nlp_failure_diagnostics.txt");
+  if (!report) {
+    if (error) *error = "Cannot create NLP failure diagnostics";
+    return false;
+  }
+  report << std::setprecision(17) << std::boolalpha
+         << "ipopt_return_status=" << result.status << '\n'
+         << "solver_stats_available=" << result.solver_stats_available << '\n'
+         << "solve_time_source="
+         << (result.solve_time_from_stats ? "opti.stats.t_wall_total"
+                                          : "measured_wall_clock") << '\n'
+         << "iterations=" << result.iterations << '\n'
+         << "solve_time_s=" << result.solve_time << '\n'
+         << "last_iterate_available=" << result.last_iterate_available << '\n'
+         << "last_iterate_is_executable=false\n"
+         << "diagnostic_error=" << result.diagnostic_error << '\n';
+  auto write = [&](const char* name, const MaximumViolation& violation) {
+    report << name << "=" << violation.value << '\n'
+           << name << "_location=" << violation.location << '\n';
+  };
+  const auto& d = result.diagnostics;
+  write("max_dynamics_x_m", d.dynamics_x_m);
+  write("max_dynamics_y_m", d.dynamics_y_m);
+  write("max_dynamics_theta_rad", d.dynamics_theta_rad);
+  write("max_dynamics_velocity_mps", d.dynamics_v_mps);
+  write("max_dynamics_steering_rad", d.dynamics_phi_rad);
+  write("max_velocity_bound_mps", d.velocity_bound_mps);
+  write("max_acceleration_bound_mps2", d.acceleration_bound_mps2);
+  write("max_steering_bound_rad", d.steering_bound_rad);
+  write("max_steering_rate_bound_radps", d.steering_rate_bound_radps);
+  write("max_time_step_bound_s", d.time_step_bound_s);
+  write("max_endpoint_x_m", d.endpoint_x_m);
+  write("max_endpoint_y_m", d.endpoint_y_m);
+  write("max_endpoint_theta_rad", d.endpoint_theta_rad);
+  write("max_endpoint_velocity_mps", d.endpoint_v_mps);
+  write("max_endpoint_acceleration_mps2", d.endpoint_acceleration_mps2);
+  write("max_endpoint_steering_rad", d.endpoint_phi_rad);
+  write("max_endpoint_steering_rate_radps",
+        d.endpoint_steering_rate_radps);
+  write("max_total_time_equality_s", d.total_time_equality_s);
+  write("max_total_time_bound_s", d.total_time_bound_s);
+  write("max_ef_curvature_equality_1pm", d.ef_curvature_equality_1pm);
+  write("max_ef_distance_equality_m", d.ef_distance_equality_m);
+  write("max_ef_corner_equality_m", d.ef_corner_equality_m);
+  write("max_ef_arc", d.ef_arc);
+  write("max_ef_forward_cond1", d.ef_forward_cond1);
+  write("max_ef_forward_cond2", d.ef_forward_cond2);
+  write("max_ef_reverse_cond1", d.ef_reverse_cond1);
+  write("max_ef_reverse_cond2", d.ef_reverse_cond2);
+  write("max_obca_q_definition", d.obca_q_definition);
+  write("max_obca_separation_m", d.obca_separation_m);
+  write("max_obca_dual_equality", d.obca_dual_equality);
+  write("max_obca_norm", d.obca_norm);
+  write("max_obca_nonnegative", d.obca_nonnegative);
+  write("max_map_boundary_m", d.map_boundary_m);
+  if (!report) {
+    if (error) *error = "Cannot write NLP failure diagnostics";
+    return false;
+  }
+  if (!result.last_iterate_available) return true;
+
+  const auto& snapshot = result.last_iterate;
+  std::ofstream csv(fs::path(debug_directory) / "nlp_last_iterate.csv");
+  if (!csv) {
+    if (error) *error = "Cannot create last-iterate CSV";
+    return false;
+  }
+  csv << std::setprecision(17)
+      << "snapshot_status,record_type,node,interval,obstacle,total_time_s,"
+         "x_m,y_m,theta_rad,v_mps,a_mps2,phy_rad,w_radps,dt_s,gear,"
+         "k_1pm,s_m,splus_m,sminus_m,up_m,down_m,left_m,right_m,"
+         "AX_m,AY_m,BX_m,BY_m,CX_m,CY_m,DX_m,DY_m,qx,qy,"
+         "lambda0,lambda1,lambda2,lambda3,mu0,mu1,mu2,mu3\n";
+  const std::size_t obstacle_count = result.model_obstacle_count;
+  for (std::size_t i = 0; i < snapshot.trajectory.intervals.size(); ++i) {
+    const std::size_t rows = std::max<std::size_t>(1, obstacle_count);
+    for (std::size_t obstacle = 0; obstacle < rows; ++obstacle) {
+      const auto& node = snapshot.trajectory.nodes[i];
+      const auto& interval = snapshot.trajectory.intervals[i];
+      csv << "UNCONVERGED_DIAGNOSTIC_DO_NOT_EXECUTE,interval," << i << ','
+          << i << ',';
+      if (obstacle_count) csv << obstacle; else csv << -1;
+      csv << ',' << snapshot.total_time << ',' << node.x << ',' << node.y
+          << ',' << node.theta << ',' << node.v << ',' << node.a << ','
+          << node.phy << ',' << node.w << ',' << interval.dt << ','
+          << (interval.gear ? 1 : -1) << ',' << snapshot.k[i] << ','
+          << snapshot.s[i] << ',' << snapshot.splus[i] << ','
+          << snapshot.sminus[i] << ',' << snapshot.up[i] << ','
+          << snapshot.down[i] << ',' << snapshot.left[i] << ','
+          << snapshot.right[i];
+      for (double coordinate : snapshot.corners[i]) csv << ',' << coordinate;
+      if (obstacle_count) {
+        const std::size_t column = i * obstacle_count + obstacle;
+        csv << ',' << snapshot.obca_qx[column] << ','
+            << snapshot.obca_qy[column];
+        for (double value : snapshot.lambda[column]) csv << ',' << value;
+        for (double value : snapshot.mu[column]) csv << ',' << value;
+      } else {
+        csv << ",,,,,,,,,,";
+      }
+      csv << '\n';
+    }
+  }
+  const std::size_t last = snapshot.trajectory.nodes.size() - 1;
+  const auto& node = snapshot.trajectory.nodes[last];
+  csv << "UNCONVERGED_DIAGNOSTIC_DO_NOT_EXECUTE,final_node," << last
+      << ",-1,-1," << snapshot.total_time << ',' << node.x << ',' << node.y
+      << ',' << node.theta << ',' << node.v << ',' << node.a << ','
+      << node.phy << ',' << node.w << ",0,0";
+  for (int i = 0; i < 26; ++i) csv << ',';
+  csv << '\n';
+  return static_cast<bool>(csv);
 }
 
 bool WriteCollisionValidation(

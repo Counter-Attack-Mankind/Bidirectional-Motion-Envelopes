@@ -2,6 +2,7 @@
   <arg name="launch_rviz" default="true"/>
   <arg name="playback_speed" default="1.0"/>
   <arg name="swept_area_resolution" default="0.005"/>
+  <arg name="save_debug_data" default="false"/>
   <arg name="results_root"
        default="$(find buffered_footprint_planner)/results"/>
 
@@ -18,6 +19,7 @@
     <rosparam command="load" file="$(find buffered_footprint_planner)/config/optimizer.yaml"/>
     <param name="results_directory"
            value="$(arg results_root)"/>
+    <param name="save_debug_data" value="$(arg save_debug_data)"/>
     <param name="visualization/playback_speed" value="$(arg playback_speed)"/>
     <param name="visualization/swept_area_resolution"
            value="$(arg swept_area_resolution)"/>

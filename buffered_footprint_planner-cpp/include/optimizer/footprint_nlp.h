@@ -19,6 +19,7 @@ struct FootprintNlpConfig {
   int max_iterations = 399984;
   double max_cpu_time = 20.0;
   std::string linear_solver = "ma27";
+  bool save_debug_data = false;
 };
 
 OptimizationResult SolveFootprintNlp(
@@ -28,10 +29,13 @@ OptimizationResult SolveFootprintNlp(
     const FootprintNlpConfig& config,
     const std::string& ipopt_log_file = std::string());
 
-bool SaveOptimizationResults(const std::string& result_directory,
-                             const Trajectory& initial,
-                             const OptimizationResult& result,
-                             std::string* error);
+bool SaveSuccessfulOptimizationResults(const std::string& result_directory,
+                                       const OptimizationResult& result,
+                                       std::string* error);
+
+bool SaveNlpFailureDiagnostics(const std::string& debug_directory,
+                               const OptimizationResult& result,
+                               std::string* error);
 
 bool WriteCollisionValidation(
     const std::string& output_file, const Trajectory& trajectory,

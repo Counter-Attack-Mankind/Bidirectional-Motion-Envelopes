@@ -37,12 +37,77 @@ struct Trajectory {
   std::vector<FootprintInterval> intervals;
 };
 
+struct MaximumViolation {
+  double value = 0.0;
+  std::string location;
+};
+
+struct NlpConstraintDiagnostics {
+  MaximumViolation dynamics_x_m;
+  MaximumViolation dynamics_y_m;
+  MaximumViolation dynamics_theta_rad;
+  MaximumViolation dynamics_v_mps;
+  MaximumViolation dynamics_phi_rad;
+  MaximumViolation velocity_bound_mps;
+  MaximumViolation acceleration_bound_mps2;
+  MaximumViolation steering_bound_rad;
+  MaximumViolation steering_rate_bound_radps;
+  MaximumViolation time_step_bound_s;
+  MaximumViolation endpoint_x_m;
+  MaximumViolation endpoint_y_m;
+  MaximumViolation endpoint_theta_rad;
+  MaximumViolation endpoint_v_mps;
+  MaximumViolation endpoint_acceleration_mps2;
+  MaximumViolation endpoint_phi_rad;
+  MaximumViolation endpoint_steering_rate_radps;
+  MaximumViolation total_time_equality_s;
+  MaximumViolation total_time_bound_s;
+  MaximumViolation ef_curvature_equality_1pm;
+  MaximumViolation ef_distance_equality_m;
+  MaximumViolation ef_corner_equality_m;
+  MaximumViolation ef_arc;
+  MaximumViolation ef_forward_cond1;
+  MaximumViolation ef_forward_cond2;
+  MaximumViolation ef_reverse_cond1;
+  MaximumViolation ef_reverse_cond2;
+  MaximumViolation obca_q_definition;
+  MaximumViolation obca_separation_m;
+  MaximumViolation obca_dual_equality;
+  MaximumViolation obca_norm;
+  MaximumViolation obca_nonnegative;
+  MaximumViolation map_boundary_m;
+};
+
+struct NlpIterateSnapshot {
+  bool available = false;
+  std::string extraction_error;
+  Trajectory trajectory;
+  double total_time = 0.0;
+  std::vector<double> k;
+  std::vector<double> s;
+  std::vector<double> splus;
+  std::vector<double> sminus;
+  std::vector<double> up;
+  std::vector<double> down;
+  std::vector<double> left;
+  std::vector<double> right;
+  std::vector<std::array<double, 8>> corners;
+  std::vector<std::array<double, 4>> lambda;
+  std::vector<std::array<double, 4>> mu;
+  std::vector<double> obca_qx;
+  std::vector<double> obca_qy;
+};
+
 struct OptimizationResult {
   Trajectory trajectory;
   bool initial_guess_succeeded = false;
   bool solver_succeeded = false;
   bool success = false;
   std::string status;
+  bool solver_stats_available = false;
+  bool solve_time_from_stats = false;
+  bool last_iterate_available = false;
+  std::string diagnostic_error;
   int iterations = -1;
   double solve_time = 0.0;
   double objective = 0.0;
@@ -72,6 +137,8 @@ struct OptimizationResult {
   std::size_t model_obstacle_count = 0;
   std::size_t model_obca_variable_count = 0;
   double model_build_time = 0.0;
+  NlpConstraintDiagnostics diagnostics;
+  NlpIterateSnapshot last_iterate;
 };
 
 }  // namespace optimizer

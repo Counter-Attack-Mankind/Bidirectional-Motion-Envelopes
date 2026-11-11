@@ -72,6 +72,7 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   node.param("ipopt_max_cpu_time", nlp.max_cpu_time, 20.0);
   node.param("ipopt_tolerance", nlp.tolerance, 1e-3);
   node.param("ipopt_linear_solver", nlp.linear_solver, std::string("ma27"));
+  node.param("save_debug_data", nlp.save_debug_data, false);
   node.param("results_directory", configuration->results_root,
              std::string("results"));
 
