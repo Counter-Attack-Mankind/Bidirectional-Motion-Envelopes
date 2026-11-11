@@ -4,7 +4,7 @@
 
 #include <ros/ros.h>
 
-#include "experiment/experiment_runner.h"
+#include "planning/experiment_runner.h"
 #include "planning/planning_config_loader.h"
 #include "scene/scene_storage.h"
 #include "visualize/scene_visualizer.h"

@@ -1,4 +1,4 @@
-#include "environment/scenario_manager.h"
+#include "scene/scenario_manager.h"
 
 #include <cmath>
 #include <unordered_set>

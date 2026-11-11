@@ -5,7 +5,7 @@
   <arg name="swept_area_resolution" default="0.005"/>
   <arg name="save_debug_data" default="false"/>
   <arg name="tasks_root"
-       default="$(find buffered_footprint_planner)/environment/tasks"/>
+       default="$(find buffered_footprint_planner)/scene/tasks"/>
   <arg name="results_root"
        default="$(find buffered_footprint_planner)/results"/>
 

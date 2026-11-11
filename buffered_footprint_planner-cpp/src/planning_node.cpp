@@ -10,7 +10,7 @@
 #include <std_msgs/Bool.h>
 
 #include "buffered_footprint_planner/SetObjectPose.h"
-#include "environment/scenario_manager.h"
+#include "scene/scenario_manager.h"
 #include "planning/planning_config_loader.h"
 #include "planning/planning_pipeline.h"
 #include "visualize/scene_visualizer.h"

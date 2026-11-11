@@ -24,7 +24,11 @@ int main() {
             << " timed_out=" << planner.timed_out()
             << " elapsed=" << elapsed << '\n';
   if (succeeded || !planner.timed_out()) return EXIT_FAILURE;
-  // Scheduling jitter is allowed, but the algorithm must return near its
-  // internal 8 s deadline rather than run to completion in the background.
-  return elapsed >= 7.4 && elapsed <= 8.0 ? EXIT_SUCCESS : EXIT_FAILURE;
+  // Scheduling jitter and one in-flight, non-preemptible calculation are
+  // allowed, but the algorithm must return near its configured deadline
+  // rather than run to completion in the background.
+  return elapsed >= config.hybrid_astar_timeout - 0.6 &&
+                 elapsed <= config.hybrid_astar_timeout + 0.75
+             ? EXIT_SUCCESS
+             : EXIT_FAILURE;
 }

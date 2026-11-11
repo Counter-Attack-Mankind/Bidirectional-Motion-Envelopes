@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <utility>
 
-#include "experiment/experiment_logger.h"
+#include "planning/experiment_logger.h"
 #include "optimizer/footprint_nlp.h"
 
 namespace planning_platform {

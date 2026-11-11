@@ -30,7 +30,7 @@ generate_messages()
 
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES common_math common_util hybrid_astar environment visualization_plot
+  LIBRARIES common_math common_util hybrid_astar visualization_plot
             scene_visualizer trajectory_player footprint_visualizer
             swept_area_visualizer trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
             planning_config experiment_runner
@@ -70,14 +70,12 @@ add_library(hybrid_astar
 target_link_libraries(hybrid_astar common_math common_util)
 
 add_library(scene_core
+  scene/scenario_manager.cpp
   scene/scene_snapshot.cpp
   scene/scene_storage.cpp
   scene/scene_recorder.cpp
 )
-target_link_libraries(scene_core common_math yaml-cpp)
-
-add_library(environment environment/scenario_manager.cpp)
-target_link_libraries(environment scene_core common_math ${catkin_LIBRARIES})
+target_link_libraries(scene_core common_math yaml-cpp ${catkin_LIBRARIES})
 
 add_library(visualization_plot visualize/visualization_plot.cpp)
 target_link_libraries(visualization_plot common_math common_util ${catkin_LIBRARIES})
@@ -110,7 +108,7 @@ add_library(footprint_optimizer
 target_link_libraries(footprint_optimizer common_math hybrid_astar
                       ${CASADI_LIBRARIES} ${catkin_LIBRARIES})
 
-add_library(experiment_logging experiment/experiment_logger.cpp)
+add_library(experiment_logging planning/experiment_logger.cpp)
 target_link_libraries(experiment_logging scene_core footprint_optimizer)
 
 add_library(planning_config planning/planning_config_loader.cpp)
@@ -120,21 +118,21 @@ add_library(planning_pipeline planning/planning_pipeline.cpp)
 target_link_libraries(planning_pipeline planning_config hybrid_astar footprint_optimizer
                       experiment_logging scene_core ${catkin_LIBRARIES})
 
-add_library(experiment_runner experiment/experiment_runner.cpp)
+add_library(experiment_runner planning/experiment_runner.cpp)
 target_link_libraries(experiment_runner planning_pipeline scene_core)
 
 add_executable(simulation_node src/simulation_node.cpp)
-target_link_libraries(simulation_node environment scene_visualizer ${catkin_LIBRARIES})
+target_link_libraries(simulation_node scene_core scene_visualizer ${catkin_LIBRARIES})
 add_dependencies(simulation_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_executable(planning_node src/planning_node.cpp)
-target_link_libraries(planning_node environment hybrid_astar footprint_optimizer
+target_link_libraries(planning_node scene_core hybrid_astar footprint_optimizer
                       planning_pipeline scene_visualizer
                       trajectory_playback_visualizer ${catkin_LIBRARIES})
 add_dependencies(planning_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_executable(scene_recorder_node src/scene_recorder_node.cpp)
-target_link_libraries(scene_recorder_node environment scene_core planning_config
+target_link_libraries(scene_recorder_node scene_core planning_config
                       ${catkin_LIBRARIES})
 add_dependencies(scene_recorder_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
@@ -151,12 +149,19 @@ catkin_install_python(PROGRAMS scripts/keyboard_editor.py
 )
 
 if(CATKIN_ENABLE_TESTING)
+  add_executable(hybrid_astar_regression tests/hybrid_astar_regression.cpp)
+  target_compile_options(hybrid_astar_regression PRIVATE -UNDEBUG)
+  target_link_libraries(hybrid_astar_regression hybrid_astar)
+  add_test(NAME hybrid_astar_regression COMMAND hybrid_astar_regression)
+
   add_executable(hybrid_astar_timeout_regression
     tests/hybrid_astar_timeout_regression.cpp)
   target_link_libraries(hybrid_astar_timeout_regression hybrid_astar)
+  add_test(NAME hybrid_astar_timeout_regression
+           COMMAND hybrid_astar_timeout_regression)
 endif()
 
-install(TARGETS common_math common_util hybrid_astar environment visualization_plot
+install(TARGETS common_math common_util hybrid_astar visualization_plot
                 scene_visualizer trajectory_player footprint_visualizer
                 swept_area_visualizer trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
                 planning_config experiment_runner simulation_node planning_node scene_recorder_node
@@ -168,5 +173,5 @@ install(TARGETS common_math common_util hybrid_astar environment visualization_p
 
 install(DIRECTORY include/ DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
 install(DIRECTORY config launch DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
-install(DIRECTORY environment/tasks
-        DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/environment)
+install(DIRECTORY scene/tasks
+        DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/scene)

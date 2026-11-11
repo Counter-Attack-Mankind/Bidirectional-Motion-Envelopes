@@ -1,7 +1,7 @@
 <launch>
   <arg name="launch_rviz" default="true"/>
   <arg name="tasks_root"
-       default="$(find buffered_footprint_planner)/environment/tasks"/>
+       default="$(find buffered_footprint_planner)/scene/tasks"/>
 
   <node pkg="buffered_footprint_planner" type="simulation_node"
         name="buffered_footprint_simulation" output="screen" required="false">
