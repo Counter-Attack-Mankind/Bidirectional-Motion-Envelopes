@@ -85,7 +85,8 @@ bool ReedShepp::ShortestFeasibleRSP(
     if (should_stop && should_stop()) return false;
     auto& path = all_possible_paths[index];
     if (path.total_length <= 0.0 ||
-        !GenerateLocalConfigurations(start_node, end_node, &path) ||
+        !GenerateLocalConfigurations(start_node, end_node, &path,
+                                     should_stop) ||
         (should_stop && should_stop()) ||
         path.x.empty() ||
         std::hypot(path.x.back() - end_node->GetX(),
@@ -907,9 +908,14 @@ bool ReedShepp::SetRSP(const int size, const double* lengths, const char* types,
 // TODO(Jinyun) : reformulate GenerateLocalConfigurations.
 bool ReedShepp::GenerateLocalConfigurations(
     const std::shared_ptr<Node3d> start_node,
-    const std::shared_ptr<Node3d> end_node, ReedSheppPath* shortest_path) {
+    const std::shared_ptr<Node3d> end_node, ReedSheppPath* shortest_path,
+    const std::function<bool()>& should_stop) {
   const double step_scaled = planner_open_space_config_.step_size * max_kappa_;
   if (!(step_scaled > 0.0) || !(max_kappa_ > 0.0)) return false;
+  // Valid RS paths contain only a handful of segments. This guard rejects
+  // non-finite or corrupted candidates before conversion to an enormous
+  // size_t can trap the planner in the sampling loop.
+  constexpr size_t kMaxLocalSamples = 100000;
   double x = 0.0;
   double y = 0.0;
   double phi = 0.0;
@@ -917,14 +923,23 @@ bool ReedShepp::GenerateLocalConfigurations(
   std::vector<double> py{0.0};
   std::vector<double> pphi{0.0};
   std::vector<bool> pgear;
+  size_t total_samples = 0;
   for (size_t i = 0; i < shortest_path->segs_types.size(); ++i) {
+    if (should_stop && should_stop()) return false;
     const double length = shortest_path->segs_lengths[i];
+    if (!std::isfinite(length)) return false;
     if (std::abs(length) < 1e-12) continue;
     const char type = shortest_path->segs_types[i];
-    const size_t count = static_cast<size_t>(std::ceil(std::abs(length) /
-                                                     step_scaled));
+    const double raw_count = std::ceil(std::abs(length) / step_scaled);
+    if (!std::isfinite(raw_count) || raw_count < 1.0 ||
+        raw_count > static_cast<double>(kMaxLocalSamples - total_samples)) {
+      return false;
+    }
+    const size_t count = static_cast<size_t>(raw_count);
+    total_samples += count;
     const double ds = length / static_cast<double>(count);
     for (size_t j = 0; j < count; ++j) {
+      if ((j & 63U) == 0U && should_stop && should_stop()) return false;
       const double curvature = type == 'L' ? 1.0 :
                                type == 'R' ? -1.0 : 0.0;
       const double next_phi = phi + curvature * ds;
@@ -947,6 +962,7 @@ bool ReedShepp::GenerateLocalConfigurations(
   if (pgear.empty()) return false;
   pgear.insert(pgear.begin(), pgear.front());
   for (size_t i = 0; i < px.size(); ++i) {
+    if ((i & 255U) == 0U && should_stop && should_stop()) return false;
     shortest_path->x.push_back(std::cos(-start_node->GetPhi()) * px.at(i) +
                                std::sin(-start_node->GetPhi()) * py.at(i) +
                                start_node->GetX());

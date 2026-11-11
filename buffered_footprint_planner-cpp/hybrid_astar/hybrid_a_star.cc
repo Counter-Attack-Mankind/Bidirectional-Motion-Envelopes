@@ -22,6 +22,7 @@
 
 #include <chrono>
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "common/util/csv_logger.h"
@@ -44,10 +45,19 @@ bool HybridAStar::DeadlineExceeded() {
   return true;
 }
 
+bool HybridAStar::StopRequested() {
+  if (cancellation_callback_ && cancellation_callback_()) {
+    cancelled_ = true;
+    return true;
+  }
+  return DeadlineExceeded();
+}
+
 HybridAStar::HybridAStar(const ParkingPlannerConfig &config, 
                          const VehicleParameter &vehicle, 
-                         const std::vector<common::math::Polygon2d> &obstacles)
-    : obstacles_(obstacles) {
+                         const std::vector<common::math::Polygon2d> &obstacles,
+                         bool save_debug_data)
+    : obstacles_(obstacles), save_debug_data_(save_debug_data) {
   planner_open_space_config_ = config;
   vehicle_param_ = vehicle;
   XYbounds_ = config.xy_bounds;
@@ -73,6 +83,39 @@ HybridAStar::HybridAStar(const ParkingPlannerConfig &config,
   traj_steer_change_penalty_ = planner_open_space_config_.traj_steer_change_penalty;
 }
 
+void HybridAStar::PublishProgress(
+    const std::shared_ptr<Node3d>& current_node, HybridSearchStatus status,
+    bool force) {
+  if (!progress_callback_) return;
+  const auto now = std::chrono::steady_clock::now();
+  if (!force && std::chrono::duration<double>(now - last_progress_publish_)
+                        .count() < kProgressPeriodSeconds) {
+    return;
+  }
+  last_progress_publish_ = now;
+  HybridSearchProgress progress;
+  progress.expanded_x = expanded_visualization_x_;
+  progress.expanded_y = expanded_visualization_y_;
+  progress.elapsed_seconds = elapsed_seconds();
+  progress.expanded_count = expanded_node_count_;
+  progress.status = status;
+  if (current_node) {
+    progress.has_current = true;
+    progress.current_x = current_node->GetX();
+    progress.current_y = current_node->GetY();
+    progress.current_phi = current_node->GetPhi();
+    std::shared_ptr<Node3d> path_node = current_node;
+    while (path_node && progress.backtrack_x.size() < kMaxBacktrackNodes) {
+      progress.backtrack_x.push_back(path_node->GetX());
+      progress.backtrack_y.push_back(path_node->GetY());
+      path_node = path_node->GetPreNode();
+    }
+    std::reverse(progress.backtrack_x.begin(), progress.backtrack_x.end());
+    std::reverse(progress.backtrack_y.begin(), progress.backtrack_y.end());
+  }
+  progress_callback_(std::move(progress));
+}
+
 bool HybridAStar::AnalyticExpansion(const std::shared_ptr<Node3d>& current_node) {
   std::shared_ptr<ReedSheppPath> reeds_shepp_to_check =
       std::make_shared<ReedSheppPath>();
@@ -81,7 +124,11 @@ bool HybridAStar::AnalyticExpansion(const std::shared_ptr<Node3d>& current_node)
           [this](const ReedSheppPath& path) {
             return RSPCheck(std::make_shared<ReedSheppPath>(path));
           }, reeds_shepp_to_check,
-          [this]() { return DeadlineExceeded(); })) {
+          [this, current_node]() {
+            PublishProgress(current_node, HybridSearchStatus::kSearching,
+                            false);
+            return StopRequested();
+          })) {
     return false;
   }
 
@@ -121,7 +168,7 @@ bool HybridAStar::ValidityCheck(const std::shared_ptr<Node3d>& node) {
   }
 
   for (size_t i = check_start_index; i < node_step_size; ++i) {
-    if (DeadlineExceeded()) return false;
+    if (StopRequested()) return false;
     common::math::Pose pose(traversed_x[i], traversed_y[i], traversed_phi[i]);
     auto vehicle_box = vehicle_param_.GenerateBox(pose);
     for (const auto& corner : vehicle_box.corners()) {
@@ -190,6 +237,7 @@ std::shared_ptr<Node3d> HybridAStar::Next_node_generator(
   intermediate_y.push_back(last_y);
   intermediate_phi.push_back(last_phi);
   for (size_t i = 0; i < arc / step_size_; ++i) {
+    if ((i & 63U) == 0U && StopRequested()) return nullptr;
     const double next_phi = common::math::NormalizeAngle(
         last_phi +
         traveled_distance / vehicle_param_.wheel_base * std::tan(steering));
@@ -257,6 +305,7 @@ bool HybridAStar::GetResult(HybridAStartResult* result) {
   std::vector<double> hybrid_a_phi;
   std::vector<bool> hybrid_a_gear;
   while (current_node->GetPreNode() != nullptr) {
+    if (StopRequested()) return false;
     std::vector<double> x = current_node->GetXs();
     std::vector<double> y = current_node->GetYs();
     std::vector<double> phi = current_node->GetPhis();
@@ -336,6 +385,7 @@ bool HybridAStar::GenerateSpeedAcceleration(HybridAStartResult* result) {
   result->steer.clear();
   result->v.push_back(0.0);
   for (size_t i = 1; i + 1 < x_size; ++i) {
+    if ((i & 255U) == 0U && StopRequested()) return false;
     const double distance = std::hypot(result->x[i + 1] - result->x[i - 1],
                                        result->y[i + 1] - result->y[i - 1]);
     const double discrete_v = (result->gear[i] ? 1.0 : -1.0) *
@@ -346,12 +396,14 @@ bool HybridAStar::GenerateSpeedAcceleration(HybridAStartResult* result) {
 
   // load acceleration from velocity
   for (size_t i = 0; i + 1 < x_size; ++i) {
+    if ((i & 255U) == 0U && StopRequested()) return false;
     const double discrete_a = (result->v[i + 1] - result->v[i]) / delta_t_;
     result->a.push_back(discrete_a);
   }
 
   // load steering from phi
   for (size_t i = 0; i + 1 < x_size; ++i) {
+    if ((i & 255U) == 0U && StopRequested()) return false;
     const double distance = std::hypot(result->x[i + 1] - result->x[i],
                                        result->y[i + 1] - result->y[i]);
     const double signed_distance = result->gear[i] ? distance : -distance;
@@ -385,6 +437,7 @@ bool HybridAStar::TrajectoryPartition(
   current_traj->phi.push_back(phi.front());
   current_traj->gear.push_back(current_gear);
   for (size_t i = 0; i < horizon - 1; ++i) {
+    if ((i & 255U) == 0U && StopRequested()) return false;
     const bool gear = result.gear[i];
     if (gear != current_gear) {
       partitioned_result->emplace_back();
@@ -404,6 +457,7 @@ bool HybridAStar::TrajectoryPartition(
 
   // Retrieve v, a and steer from path
   for (auto& result : *partitioned_result) {
+    if (StopRequested()) return false;
     if (!GenerateSpeedAcceleration(&result)) {
       printf("GenerateSpeedAcceleration fail");
       return false;
@@ -420,6 +474,7 @@ bool HybridAStar::GetTemporalProfile(HybridAStartResult* result) {
   }
   HybridAStartResult stitched_result;
   for (const auto& result : partitioned_results) {
+    if (StopRequested()) return false;
     std::copy(result.x.begin(), result.x.end() - 1,
               std::back_inserter(stitched_result.x));
     std::copy(result.y.begin(), result.y.end() - 1,
@@ -443,6 +498,7 @@ bool HybridAStar::GetTemporalProfile(HybridAStartResult* result) {
   stitched_result.accumulated_s.reserve(stitched_result.x.size());
   stitched_result.accumulated_s.push_back(0.0);
   for (size_t i = 1; i < stitched_result.x.size(); ++i) {
+    if ((i & 255U) == 0U && StopRequested()) return false;
     stitched_result.accumulated_s.push_back(
         stitched_result.accumulated_s.back() +
         std::hypot(stitched_result.x[i] - stitched_result.x[i - 1],
@@ -453,50 +509,70 @@ bool HybridAStar::GetTemporalProfile(HybridAStartResult* result) {
 }
 
 bool HybridAStar::Plan(
-    double sx, double sy, double sphi, double ex, double ey, double ephi, HybridAStartResult* result) {
+    double sx, double sy, double sphi, double ex, double ey, double ephi,
+    HybridAStartResult* result, ProgressCallback progress_callback,
+    CancellationCallback cancellation_callback) {
   // clear containers
   search_begin_ = std::chrono::steady_clock::now();
   search_deadline_ = search_begin_ +
       std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-          std::chrono::duration<double>(kSearchTimeoutSeconds -
-                                        kDeadlineGuardSeconds));
+          std::chrono::duration<double>(kSearchTimeoutSeconds));
   timed_out_ = false;
+  cancelled_ = false;
+  progress_callback_ = std::move(progress_callback);
+  cancellation_callback_ = std::move(cancellation_callback);
+  last_progress_publish_ = search_begin_ - std::chrono::seconds(1);
+  expanded_visualization_x_.clear();
+  expanded_visualization_y_.clear();
+  expanded_node_count_ = 0;
   open_set_.clear();
   close_set_.clear();
   open_pq_ = decltype(open_pq_)();
   final_node_ = nullptr;
 
-  // 初始化CSV记录器
-  HybridAStarLogger::Initialize();
+  if (save_debug_data_) HybridAStarLogger::Initialize();
+  printf("Hybrid A* search started (timeout %.1f s)\n",
+         kSearchTimeoutSeconds);
 
   // load nodes and obstacles
   start_node_.reset(
       new Node3d(sx, sy, sphi, XYbounds_, planner_open_space_config_));
   end_node_.reset(
       new Node3d(ex, ey, ephi, XYbounds_, planner_open_space_config_));
+  PublishProgress(start_node_, HybridSearchStatus::kSearching, true);
   if (!ValidityCheck(start_node_)) {
     printf("start_node in collision with obstacles");
+    PublishProgress(start_node_, HybridSearchStatus::kFailed, true);
     HybridAStarLogger::Finalize();
     return false;
   }
   if (!ValidityCheck(end_node_)) {
     printf("end_node in collision with obstacles");
+    PublishProgress(start_node_, HybridSearchStatus::kFailed, true);
     HybridAStarLogger::Finalize();
     return false;
   }
   if (!grid_a_star_heuristic_generator_->GenerateDpMap(
-          ex, ey, XYbounds_, [this]() { return DeadlineExceeded(); })) {
+          ex, ey, XYbounds_, [this]() {
+            PublishProgress(start_node_, HybridSearchStatus::kSearching,
+                            false);
+            return StopRequested();
+          })) {
     if (timed_out_) {
       printf("Hybrid A* timeout after %.3f s while building DP map\n",
              elapsed_seconds());
     }
+    PublishProgress(start_node_, timed_out_ ? HybridSearchStatus::kTimedOut :
+                    (cancelled_ ? HybridSearchStatus::kCancelled :
+                                  HybridSearchStatus::kFailed), true);
     HybridAStarLogger::Finalize();
     return false;
   }
 
   // DEBUG: check if DP map reaches start
   double start_dp_cost = grid_a_star_heuristic_generator_->CheckDpMap(sx, sy);
-  printf("DP map heuristic at start (%.2f, %.2f): %.4f\n", sx, sy, start_dp_cost);
+  printf("Hybrid A* DP map completed in %.3f s; start heuristic: %.4f\n",
+         elapsed_seconds(), start_dp_cost);
   if (std::isinf(start_dp_cost)) {
     printf("WARNING: 2D grid search cannot reach start from goal! Check obstacles/bounds.\n");
     printf("  Bounds: x=[%.2f, %.2f], y=[%.2f, %.2f]\n",
@@ -510,19 +586,14 @@ bool HybridAStar::Plan(
   open_pq_.emplace(start_node_->GetIndex(), start_node_->GetCost());
 
   // Hybrid A* begins
-  size_t explored_node_num = 0;
-  double heuristic_time = 0.0;
-  double rs_time = 0.0;
+  std::shared_ptr<Node3d> last_expanded = start_node_;
+  size_t admitted_node_count = 0;
   while (!open_pq_.empty()) {
-    if (DeadlineExceeded()) {
-      printf("Hybrid A* timeout after %.3f s (%zu nodes explored)\n",
-             elapsed_seconds(), explored_node_num);
-      break;
-    }
+    if (StopRequested()) break;
     // CRITICAL FIX: Add exploration limit to prevent infinite search
-    if (explored_node_num >= planner_open_space_config_.explore_node_num) {
-      printf("Hybrid A* reached exploration limit: %ld nodes explored\n",
-             planner_open_space_config_.explore_node_num);
+    if (admitted_node_count >= planner_open_space_config_.explore_node_num) {
+      printf("Hybrid A* reached exploration limit: %zu nodes explored\n",
+             admitted_node_count);
       break;
     }
 
@@ -533,6 +604,14 @@ bool HybridAStar::Plan(
     std::shared_ptr<Node3d> current_node = open_set_[current_id];
     if (close_set_.count(current_id) ||
         queued_cost > current_node->GetCost() + 1e-12) continue;
+
+    last_expanded = current_node;
+    ++expanded_node_count_;
+    if (expanded_visualization_x_.size() < kMaxVisualizedExpandedNodes) {
+      expanded_visualization_x_.push_back(current_node->GetX());
+      expanded_visualization_y_.push_back(current_node->GetY());
+    }
+    PublishProgress(current_node, HybridSearchStatus::kSearching, false);
 
     // OPTIMIZATION: Check distance to goal - try analytic expansion more frequently when close
     double dx = current_node->GetX() - end_node_->GetX();
@@ -546,9 +625,10 @@ bool HybridAStar::Plan(
       printf("Hybrid A* found solution at distance %.2f from goal\n", distance_to_goal);
       break;
     }
+    if (StopRequested()) break;
     close_set_.emplace(current_node->GetIndex(), current_node);
     for (size_t i = 0; i < next_node_num_; ++i) {
-      if (DeadlineExceeded()) break;
+      if (StopRequested()) break;
       std::shared_ptr<Node3d> next_node = Next_node_generator(current_node, i);
       // boundary check failure handle
       if (next_node == nullptr) {
@@ -566,28 +646,36 @@ bool HybridAStar::Plan(
       const auto existing = open_set_.find(next_node->GetIndex());
       if (existing == open_set_.end() ||
           next_node->GetCost() + 1e-12 < existing->second->GetCost()) {
-        if (existing == open_set_.end()) ++explored_node_num;
+        if (existing == open_set_.end()) ++admitted_node_count;
         open_set_.emplace(next_node->GetIndex(), next_node);
         if (existing != open_set_.end()) existing->second = next_node;
         open_pq_.emplace(next_node->GetIndex(), next_node->GetCost());
 
         // 记录搜索节点
-        HybridAStarLogger::LogSearchNode(
-            next_node->GetX(), next_node->GetY(), next_node->GetPhi(),
-            next_node->GetTrajCost(), next_node->GetHeuCost(),
-            next_node->GetDirec(), next_node->GetSteer(),
-            explored_node_num);
+        if (save_debug_data_) {
+          HybridAStarLogger::LogSearchNode(
+              next_node->GetX(), next_node->GetY(), next_node->GetPhi(),
+              next_node->GetTrajCost(), next_node->GetHeuCost(),
+              next_node->GetDirec(), next_node->GetSteer(),
+              expanded_node_count_);
+        }
       }
     }
   }
   if (final_node_ == nullptr) {
-    printf("Hybrid A* search %s: final_node is nullptr\n",
-           timed_out_ ? "timed out" : "failed");
-    printf("Total nodes explored: %zu\n", explored_node_num);
+    printf("Hybrid A* search %s after %.3f s; expanded=%zu\n",
+           timed_out_ ? "timed out" : (cancelled_ ? "cancelled" : "failed"),
+           elapsed_seconds(), expanded_node_count_);
+    PublishProgress(last_expanded, timed_out_ ? HybridSearchStatus::kTimedOut :
+                    (cancelled_ ? HybridSearchStatus::kCancelled :
+                                  HybridSearchStatus::kFailed), true);
     HybridAStarLogger::Finalize();
     return false;
   }
   if (!GetResult(result)) {
+    PublishProgress(last_expanded, timed_out_ ? HybridSearchStatus::kTimedOut :
+                    (cancelled_ ? HybridSearchStatus::kCancelled :
+                                  HybridSearchStatus::kFailed), true);
     HybridAStarLogger::Finalize();
     return false;
   }
@@ -595,19 +683,23 @@ bool HybridAStar::Plan(
   // Calculate path statistics
   double path_length = 0.0;
   for (size_t i = 1; i < result->x.size(); ++i) {
+    if ((i & 255U) == 0U && StopRequested()) {
+      PublishProgress(last_expanded,
+                      timed_out_ ? HybridSearchStatus::kTimedOut
+                                 : HybridSearchStatus::kCancelled,
+                      true);
+      HybridAStarLogger::Finalize();
+      return false;
+    }
     double dx = result->x[i] - result->x[i-1];
     double dy = result->y[i] - result->y[i-1];
     path_length += std::sqrt(dx * dx + dy * dy);
   }
 
-  printf("Hybrid A* search succeeded:\n");
-  printf("  - Nodes explored: %zu\n", explored_node_num);
-  printf("  - Path points: %zu\n", result->x.size());
-  printf("  - Path length: %.2f m\n", path_length);
-
-  // 记录最终的粗路径结果
-  HybridAStarLogger::LogCoarsePath(result->x, result->y, result->phi,
-                                   result->v, result->a, result->steer);
+  printf("Hybrid A* search succeeded in %.3f s; expanded=%zu; points=%zu; "
+         "length=%.2f m\n", elapsed_seconds(), expanded_node_count_,
+         result->x.size(), path_length);
+  PublishProgress(last_expanded, HybridSearchStatus::kSucceeded, true);
 
   HybridAStarLogger::Finalize();
   return true;

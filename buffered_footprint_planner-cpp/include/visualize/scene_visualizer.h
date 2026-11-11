@@ -31,6 +31,8 @@ class SceneVisualizer {
                      std::size_t index) const;
   void QueueStart(const scene::Pose2d& start, bool locked = false) const;
   void QueueGoal(const scene::Pose2d& goal) const;
+  void QueueHybridSearch(
+      const planning::HybridSearchProgress& progress) const;
   void QueueHybridPath(const planning::HybridAStartResult& path) const;
   void QueueOptimizedTrajectory(const optimizer::Trajectory& trajectory,
                                 bool clear_existing = true) const;
@@ -39,6 +41,7 @@ class SceneVisualizer {
   void QueuePlaybackVehicle(const PlaybackState& state) const;
 
   void ClearPlanningResults() const;
+  void ClearHybridSearch() const;
   void ClearTrajectoryPlayback() const;
   void Trigger() const;
 

@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <utility>
 
 #include "experiment/experiment_logger.h"
 #include "optimizer/footprint_nlp.h"
@@ -21,7 +22,9 @@ PlanningPipeline::PlanningPipeline(PlanningConfiguration configuration)
 
 PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
                                         const std::string& mode,
-                                        HybridCompleteCallback hybrid_complete) const {
+                                        HybridCompleteCallback hybrid_complete,
+                                        HybridProgressCallback hybrid_progress,
+                                        CancellationCallback cancellation) const {
   PlanningRunResult result;
   experiment::ExperimentLogger logger;
   std::string error;
@@ -49,12 +52,14 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
   ParkingPlannerConfig planner_config = configuration_.planner;
   planner_config.xy_bounds = snapshot.bounds;
   planning::HybridAStar planner(planner_config, configuration_.vehicle,
-                                snapshot.obstacle_polygons());
+                                snapshot.obstacle_polygons(),
+                                configuration_.nlp.save_debug_data);
   const auto hybrid_begin = std::chrono::steady_clock::now();
   result.hybrid_succeeded = planner.Plan(
       snapshot.start.x, snapshot.start.y, snapshot.start.yaw,
       snapshot.goal.x, snapshot.goal.y, snapshot.goal.yaw,
-      &result.hybrid_path);
+      &result.hybrid_path, std::move(hybrid_progress),
+      std::move(cancellation));
   result.hybrid_elapsed = SecondsSince(hybrid_begin);
   result.hybrid_timed_out = planner.timed_out();
   if (!result.hybrid_succeeded) {

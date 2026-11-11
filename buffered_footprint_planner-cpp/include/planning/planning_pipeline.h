@@ -32,12 +32,16 @@ class PlanningPipeline {
  public:
   using HybridCompleteCallback =
       std::function<void(const planning::HybridAStartResult&, double)>;
+  using HybridProgressCallback = planning::HybridAStar::ProgressCallback;
+  using CancellationCallback = planning::HybridAStar::CancellationCallback;
 
   explicit PlanningPipeline(PlanningConfiguration configuration);
 
   PlanningRunResult Run(const scene::SceneSnapshot& snapshot,
                         const std::string& mode,
-                        HybridCompleteCallback hybrid_complete = {}) const;
+                        HybridCompleteCallback hybrid_complete = {},
+                        HybridProgressCallback hybrid_progress = {},
+                        CancellationCallback cancellation = {}) const;
 
  private:
   PlanningConfiguration configuration_;

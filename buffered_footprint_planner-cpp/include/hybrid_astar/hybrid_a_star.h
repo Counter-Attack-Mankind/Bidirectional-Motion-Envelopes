@@ -29,6 +29,7 @@
 #include <utility>
 #include <vector>
 #include <array>
+#include <functional>
 
 #include "common/math/math_utils.h"
 #include "hybrid_astar/grid_search.h"
@@ -50,14 +51,44 @@ struct HybridAStartResult {
   std::vector<double> accumulated_s;
 };
 
+enum class HybridSearchStatus {
+  kSearching,
+  kSucceeded,
+  kFailed,
+  kTimedOut,
+  kCancelled,
+};
+
+// Bounded, presentation-only snapshot. It never participates in search costs
+// or node ordering.
+struct HybridSearchProgress {
+  std::vector<double> expanded_x;
+  std::vector<double> expanded_y;
+  std::vector<double> backtrack_x;
+  std::vector<double> backtrack_y;
+  double current_x = 0.0;
+  double current_y = 0.0;
+  double current_phi = 0.0;
+  double elapsed_seconds = 0.0;
+  std::size_t expanded_count = 0;
+  bool has_current = false;
+  HybridSearchStatus status = HybridSearchStatus::kSearching;
+};
+
 class HybridAStar {
 public:
+  using ProgressCallback = std::function<void(HybridSearchProgress)>;
+  using CancellationCallback = std::function<bool()>;
+
   HybridAStar(const ParkingPlannerConfig &config, 
               const VehicleParameter &vehicle, 
-              const std::vector<common::math::Polygon2d> &obstacles);
+              const std::vector<common::math::Polygon2d> &obstacles,
+              bool save_debug_data = false);
   virtual ~HybridAStar() = default;
   bool Plan(double sx, double sy, double sphi, double ex, double ey, double ephi,
-            HybridAStartResult* result);
+            HybridAStartResult* result,
+            ProgressCallback progress_callback = {},
+            CancellationCallback cancellation_callback = {});
   bool timed_out() const { return timed_out_; }
   double elapsed_seconds() const;
   bool TrajectoryPartition(const HybridAStartResult& result,
@@ -84,6 +115,9 @@ private:
   bool GetTemporalProfile(HybridAStartResult* result);
   bool GenerateSpeedAcceleration(HybridAStartResult* result);
   bool DeadlineExceeded();
+  bool StopRequested();
+  void PublishProgress(const std::shared_ptr<Node3d>& current_node,
+                       HybridSearchStatus status, bool force);
 
 private:
   ParkingPlannerConfig planner_open_space_config_;
@@ -125,10 +159,18 @@ private:
   std::chrono::steady_clock::time_point search_begin_;
   std::chrono::steady_clock::time_point search_deadline_;
   bool timed_out_ = false;
+  bool cancelled_ = false;
+  bool save_debug_data_ = false;
+  ProgressCallback progress_callback_;
+  CancellationCallback cancellation_callback_;
+  std::chrono::steady_clock::time_point last_progress_publish_;
+  std::vector<double> expanded_visualization_x_;
+  std::vector<double> expanded_visualization_y_;
+  std::size_t expanded_node_count_ = 0;
   static constexpr double kSearchTimeoutSeconds = 8.0;
-  // A single STL allocation/rehash cannot be preempted. Stop admitting new
-  // work slightly early so such an in-flight operation cannot cross 8.0 s.
-  static constexpr double kDeadlineGuardSeconds = 0.5;
+  static constexpr double kProgressPeriodSeconds = 0.15;
+  static constexpr std::size_t kMaxVisualizedExpandedNodes = 10000;
+  static constexpr std::size_t kMaxBacktrackNodes = 1000;
 };
 
 }  // namespace planning

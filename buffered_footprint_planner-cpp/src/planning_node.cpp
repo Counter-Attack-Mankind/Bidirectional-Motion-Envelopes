@@ -4,6 +4,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 
 #include <ros/ros.h>
 #include <std_msgs/Bool.h>
@@ -21,6 +22,7 @@ class PlanningNode {
  public:
   PlanningNode() : private_node_("~") {}
   ~PlanningNode() {
+    cancel_planning_ = true;
     if (planning_thread_.joinable()) planning_thread_.join();
   }
 
@@ -40,6 +42,8 @@ class PlanningNode {
     private_node_.param("visualization/playback_speed", playback_speed, 1.0);
     private_node_.param("visualization/swept_area_resolution",
                         swept_area_resolution, 0.005);
+    private_node_.param("visualization/show_hybrid_search",
+                        show_hybrid_search_, true);
     if (!playback_.Initialize(private_node_, &visualizer_,
                               configuration_.vehicle, playback_speed,
                               swept_area_resolution, &error)) {
@@ -116,6 +120,7 @@ class PlanningNode {
   void LockCallback(const std_msgs::Bool::ConstPtr& message) {
     if (!message->data) {
       last_locked_ = false;
+      cancel_planning_ = true;
       ++scene_generation_;
       playback_.StopAndClear();
       return;
@@ -131,10 +136,12 @@ class PlanningNode {
       planning_ = false;
       return;
     }
+    visualizer_.ClearPlanningResults();
     visualizer_.QueueGoal(snapshot.goal);
     visualizer_.Trigger();
     if (planning_thread_.joinable()) planning_thread_.join();
     const std::uint64_t generation = scene_generation_.load();
+    cancel_planning_ = false;
     planning_thread_ = std::thread(
         [this, snapshot = std::move(snapshot), generation]() mutable {
           planning_platform::PlanningPipeline pipeline(configuration_);
@@ -149,6 +156,21 @@ class PlanningNode {
                     pending_hybrid_generation_ = generation;
                     ROS_INFO("Hybrid A* completed after %.3f s; queued for "
                              "immediate RViz publication", elapsed);
+                  },
+                  show_hybrid_search_
+                      ? planning_platform::PlanningPipeline::HybridProgressCallback(
+                            [this, generation](
+                                planning::HybridSearchProgress progress) {
+                              std::lock_guard<std::mutex> lock(event_mutex_);
+                              pending_hybrid_progress_ =
+                                  std::make_shared<planning::HybridSearchProgress>(
+                                      std::move(progress));
+                              pending_progress_generation_ = generation;
+                            })
+                      : planning_platform::PlanningPipeline::HybridProgressCallback{},
+                  [this, generation]() {
+                    return cancel_planning_.load() || !ros::ok() ||
+                           generation != scene_generation_.load();
                   }));
           ReleaseScene();
           {
@@ -161,23 +183,38 @@ class PlanningNode {
   }
 
   void ProcessPlanningEvents(const ros::TimerEvent&) {
+    std::shared_ptr<planning::HybridSearchProgress> progress;
     std::shared_ptr<planning::HybridAStartResult> hybrid;
     std::shared_ptr<planning_platform::PlanningRunResult> result;
     std::uint64_t hybrid_generation = 0;
+    std::uint64_t progress_generation = 0;
     std::uint64_t result_generation = 0;
     {
       std::lock_guard<std::mutex> lock(event_mutex_);
+      progress = std::move(pending_hybrid_progress_);
+      progress_generation = pending_progress_generation_;
       hybrid = std::move(pending_hybrid_);
       hybrid_generation = pending_hybrid_generation_;
       result = std::move(completed_result_);
       result_generation = completed_generation_;
     }
     const std::uint64_t current_generation = scene_generation_.load();
+    if (progress && progress_generation == current_generation) {
+      visualizer_.QueueHybridSearch(*progress);
+      visualizer_.Trigger();
+    }
     if (hybrid && hybrid_generation == current_generation) {
       visualizer_.QueueHybridPath(*hybrid);
       visualizer_.Trigger();
     }
     if (!result || result_generation != current_generation) return;
+    if (!result->hybrid_succeeded) {
+      playback_.StopAndClear();
+      ROS_ERROR("Hybrid A* %s after %.3f s; results: %s",
+                result->hybrid_timed_out ? "timed out" : "failed",
+                result->hybrid_elapsed, result->result_directory.c_str());
+      return;
+    }
     ROS_INFO("Initial guess %s; NLP nodes: %zu; elapsed: %.3f s",
              result->initial_guess_succeeded ? "succeeded" : "failed",
              result->initial_guess.nodes.size(), result->initial_guess_elapsed);
@@ -214,6 +251,8 @@ class PlanningNode {
   planning_platform::PlanningConfiguration configuration_;
   std::string vehicle_id_ = "vehicle_1";
   std::atomic<bool> planning_{false};
+  std::atomic<bool> cancel_planning_{false};
+  bool show_hybrid_search_ = true;
   bool scene_locked_ = false;
   bool last_locked_ = false;
   std::atomic<std::uint64_t> scene_generation_{0};
@@ -224,9 +263,11 @@ class PlanningNode {
   ros::Timer result_timer_;
   std::thread planning_thread_;
   std::mutex event_mutex_;
+  std::shared_ptr<planning::HybridSearchProgress> pending_hybrid_progress_;
   std::shared_ptr<planning::HybridAStartResult> pending_hybrid_;
   std::shared_ptr<planning_platform::PlanningRunResult> completed_result_;
   std::uint64_t pending_hybrid_generation_ = 0;
+  std::uint64_t pending_progress_generation_ = 0;
   std::uint64_t completed_generation_ = 0;
 };
 

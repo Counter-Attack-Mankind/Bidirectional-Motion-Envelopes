@@ -106,8 +106,8 @@ class KeyboardSceneEditor {
  private:
   bool LoadObstacleIds() {
     XmlRpc::XmlRpcValue obstacles;
-    if (!private_node_.getParam("obstacles", obstacles) ||
-        obstacles.getType() != XmlRpc::XmlRpcValue::TypeArray) {
+    if (!private_node_.getParam("/buffered_footprint_simulation/obstacles", obstacles) ||
+    obstacles.getType() != XmlRpc::XmlRpcValue::TypeArray) {
       ROS_ERROR("Parameter 'obstacles' must be an array");
       return false;
     }

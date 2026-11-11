@@ -84,12 +84,54 @@ void SceneVisualizer::QueueGoal(const scene::Pose2d& goal) const {
 void SceneVisualizer::QueueHybridPath(
     const planning::HybridAStartResult& path) const {
   if (path.x.empty() || path.x.size() != path.y.size()) return;
+  ClearHybridSearch();
   std::vector<Color> colors(path.x.size(), Color::Green);
   for (std::size_t i = 0; i < colors.size() && i < path.gear.size(); ++i) {
     if (!path.gear[i]) colors[i] = Color::Cyan;
   }
   VisualizationPlot::Plot(path.x, path.y, 0.025, colors, 0,
                           "hybrid_astar_path");
+}
+
+void SceneVisualizer::QueueHybridSearch(
+    const planning::HybridSearchProgress& progress) const {
+  if (!progress.expanded_x.empty()) {
+    VisualizationPlot::PlotPoints(
+        progress.expanded_x, progress.expanded_y,
+        Color::fromRGB(0.72f, 0.72f, 0.72f), 0.018, 0,
+        "hybrid_search_expanded", 0.025);
+  }
+  if (progress.backtrack_x.size() >= 2) {
+    VisualizationPlot::Plot(progress.backtrack_x, progress.backtrack_y, 0.012,
+                            Color::fromRGB(1.0f, 0.55f, 0.0f), 0,
+                            "hybrid_search_backtrack");
+  }
+  if (progress.has_current) {
+    constexpr double kArrowLength = 0.16;
+    VisualizationPlot::PlotArrow(
+        progress.current_x, progress.current_y,
+        progress.current_x + kArrowLength * std::cos(progress.current_phi),
+        progress.current_y + kArrowLength * std::sin(progress.current_phi),
+        Color::Yellow, 0, "hybrid_search_current", 0.010, 0.028,
+        0.035, 0.05);
+  }
+
+  const char* state = "Searching";
+  switch (progress.status) {
+    case planning::HybridSearchStatus::kSucceeded: state = "Succeeded"; break;
+    case planning::HybridSearchStatus::kFailed: state = "Failed"; break;
+    case planning::HybridSearchStatus::kTimedOut: state = "Timed out"; break;
+    case planning::HybridSearchStatus::kCancelled: state = "Cancelled"; break;
+    case planning::HybridSearchStatus::kSearching: break;
+  }
+  std::ostringstream text;
+  text << state << " | elapsed=" << std::fixed << std::setprecision(1)
+       << progress.elapsed_seconds << "s | expanded="
+       << progress.expanded_count;
+  const double text_x = progress.has_current ? progress.current_x : 0.0;
+  const double text_y = progress.has_current ? progress.current_y + 0.22 : 0.0;
+  VisualizationPlot::PlotText(text_x, text_y, text.str(), 0.065,
+                              Color::Black, 0, "hybrid_search_status");
 }
 
 void SceneVisualizer::QueueOptimizedTrajectory(
@@ -170,7 +212,15 @@ void SceneVisualizer::QueuePlaybackVehicle(const PlaybackState& state) const {
 
 void SceneVisualizer::ClearPlanningResults() const {
   VisualizationPlot::ClearMarkers("hybrid_astar_path", 0, 0);
+  ClearHybridSearch();
   ClearTrajectoryPlayback();
+}
+
+void SceneVisualizer::ClearHybridSearch() const {
+  VisualizationPlot::ClearMarkers("hybrid_search_expanded", 0, 0);
+  VisualizationPlot::ClearMarkers("hybrid_search_backtrack", 0, 0);
+  VisualizationPlot::ClearMarkers("hybrid_search_current", 0, 0);
+  VisualizationPlot::ClearMarkers("hybrid_search_status", 0, 0);
 }
 
 void SceneVisualizer::ClearTrajectoryPlayback() const {

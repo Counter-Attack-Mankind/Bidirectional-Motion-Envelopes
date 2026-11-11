@@ -76,7 +76,6 @@ void HybridAStarLogger::Initialize(const std::string& run_id) {
                   {"x", "y", "phi", "trajectory_cost", "heuristic_cost", "total_cost",
                    "direction", "steering", "iteration"});
   CSVLogger::Open(run_id_ + "_rs_path_summary.csv", {"path_id", "total_length", "num_points"});
-  CSVLogger::Open(run_id_ + "_coarse_path.csv", {"index", "x", "y", "phi", "v", "a", "steer"});
   initialized_ = true;
 }
 

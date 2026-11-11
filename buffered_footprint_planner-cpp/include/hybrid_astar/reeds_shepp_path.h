@@ -85,7 +85,8 @@ protected:
   // Set local exact configurations profile of each movement primitive
   bool GenerateLocalConfigurations(const std::shared_ptr<Node3d> start_node,
                                    const std::shared_ptr<Node3d> end_node,
-                                   ReedSheppPath* shortest_path);
+                                     ReedSheppPath* shortest_path,
+                                     const std::function<bool()>& should_stop = {});
   // Interpolation usde in GenetateLocalConfiguration
   void Interpolation(const int index, const double pd, const char m,
                      const double ox, const double oy, const double ophi,

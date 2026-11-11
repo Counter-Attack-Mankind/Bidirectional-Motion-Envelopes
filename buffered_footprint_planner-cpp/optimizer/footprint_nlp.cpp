@@ -942,8 +942,8 @@ OptimizationResult SolveFootprintNlp(
   solver_options["tol"] = config.tolerance;
   solver_options["linear_solver"] = config.linear_solver;
   solver_options["mu_strategy"] = "adaptive";
-  solver_options["print_level"] = 0;
-  solver_options["sb"] = "yes";
+  solver_options["print_level"] = 5;
+  solver_options["sb"] = "no";
   if (!ipopt_log_file.empty()) {
     solver_options["output_file"] = ipopt_log_file;
     solver_options["file_print_level"] = 5;
