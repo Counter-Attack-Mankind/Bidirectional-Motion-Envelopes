@@ -7,8 +7,11 @@
 #include <iostream>
 #include <string>
 #include <termios.h>
+#include <unordered_set>
 #include <unistd.h>
+#include <vector>
 
+#include <XmlRpcValue.h>
 #include <ros/ros.h>
 #include <std_msgs/Bool.h>
 
@@ -52,6 +55,7 @@ class KeyboardSceneEditor {
     private_node_.param("editor/translation_step", translation_step_, 0.01);
     private_node_.param("editor/rotation_step", rotation_step_, 0.0872664626);
     private_node_.param("vehicle/id", vehicle_id_, std::string("vehicle_1"));
+    if (!LoadObstacleIds()) return false;
     client_ = private_node_.serviceClient<buffered_footprint_planner::SetObjectPose>(
         "/simulation/set_object_pose");
     if (!client_.waitForExistence(ros::Duration(10.0))) {
@@ -61,7 +65,7 @@ class KeyboardSceneEditor {
     locked_subscriber_ = private_node_.subscribe(
         "/simulation/start_locked", 1,
         &KeyboardSceneEditor::LockedCallback, this);
-    return SelectObject("box_1");
+    return SelectObject(obstacle_ids_.front());
   }
 
   void Run() {
@@ -84,8 +88,9 @@ class KeyboardSceneEditor {
       const char key = static_cast<char>(std::toupper(
           static_cast<unsigned char>(input)));
       if (key == 'Q') break;
-      if (key >= '1' && key <= '3') {
-        SelectObject(std::string("box_") + key);
+      if (key >= '1' && key <= '9') {
+        const std::size_t index = static_cast<std::size_t>(key - '1');
+        if (index < obstacle_ids_.size()) SelectObject(obstacle_ids_[index]);
       } else if (key == 'V') {
         SelectObject(vehicle_id_);
       } else if (key == 'P') {
@@ -99,6 +104,39 @@ class KeyboardSceneEditor {
   }
 
  private:
+  bool LoadObstacleIds() {
+    XmlRpc::XmlRpcValue obstacles;
+    if (!private_node_.getParam("obstacles", obstacles) ||
+        obstacles.getType() != XmlRpc::XmlRpcValue::TypeArray) {
+      ROS_ERROR("Parameter 'obstacles' must be an array");
+      return false;
+    }
+    if (obstacles.size() < 1 || obstacles.size() > 9) {
+      ROS_ERROR("Keyboard editor requires 1 to 9 configured obstacles; got %d",
+                obstacles.size());
+      return false;
+    }
+    std::unordered_set<std::string> unique_ids;
+    obstacle_ids_.clear();
+    obstacle_ids_.reserve(static_cast<std::size_t>(obstacles.size()));
+    for (int i = 0; i < obstacles.size(); ++i) {
+      const auto& obstacle = obstacles[i];
+      if (obstacle.getType() != XmlRpc::XmlRpcValue::TypeStruct ||
+          !obstacle.hasMember("id") ||
+          obstacle["id"].getType() != XmlRpc::XmlRpcValue::TypeString) {
+        ROS_ERROR("Obstacle entry %d has no valid string ID", i);
+        return false;
+      }
+      const std::string id = static_cast<std::string>(obstacle["id"]);
+      if (id.empty() || !unique_ids.insert(id).second) {
+        ROS_ERROR("Obstacle IDs must be non-empty and unique");
+        return false;
+      }
+      obstacle_ids_.push_back(id);
+    }
+    return true;
+  }
+
   bool Call(std::uint8_t action, const std::string& object_id,
             double x, double y, double yaw,
             buffered_footprint_planner::SetObjectPose::Response* response) {
@@ -166,9 +204,8 @@ class KeyboardSceneEditor {
   }
 
   void PrintScene() {
-    const std::string ids[] = {"box_1", "box_2", "box_3", vehicle_id_};
     std::cout << "\nCurrent scene:\n";
-    for (const auto& id : ids) {
+    for (const auto& id : obstacle_ids_) {
       buffered_footprint_planner::SetObjectPose::Response response;
       if (Call(buffered_footprint_planner::SetObjectPoseRequest::QUERY_POSE,
                id, 0.0, 0.0, 0.0, &response) && response.success) {
@@ -177,13 +214,26 @@ class KeyboardSceneEditor {
                   << " yaw=" << response.yaw * 180.0 / M_PI << " deg\n";
       }
     }
+    buffered_footprint_planner::SetObjectPose::Response response;
+    if (Call(buffered_footprint_planner::SetObjectPoseRequest::QUERY_POSE,
+             vehicle_id_, 0.0, 0.0, 0.0, &response) && response.success) {
+      std::cout << "  " << vehicle_id_ << ": x=" << response.x
+                << " y=" << response.y
+                << " yaw=" << response.yaw * 180.0 / M_PI << " deg\n";
+    }
     PrintCurrent();
   }
 
   void PrintHelp() const {
     std::cout << "\nW/S: +Y/-Y  A/D: -X/+X  R/F: CCW/CW\n"
-              << "1/2/3: select obstacle  V: Vehicle 1  P: print scene\n"
+              << "1-" << obstacle_ids_.size()
+              << ": select obstacle  V: Vehicle 1  P: print scene\n"
               << "Enter: finish placement/start 3 s lock  Q: quit editor\n";
+    std::cout << "Obstacle keys:";
+    for (std::size_t i = 0; i < obstacle_ids_.size(); ++i) {
+      std::cout << "  " << (i + 1) << '=' << obstacle_ids_[i];
+    }
+    std::cout << '\n';
   }
 
   void PrintCurrent() const {
@@ -204,8 +254,9 @@ class KeyboardSceneEditor {
   ros::NodeHandle private_node_;
   ros::ServiceClient client_;
   ros::Subscriber locked_subscriber_;
+  std::vector<std::string> obstacle_ids_;
   std::string vehicle_id_ = "vehicle_1";
-  std::string object_id_ = "box_1";
+  std::string object_id_;
   double x_ = 0.0;
   double y_ = 0.0;
   double yaw_ = 0.0;
