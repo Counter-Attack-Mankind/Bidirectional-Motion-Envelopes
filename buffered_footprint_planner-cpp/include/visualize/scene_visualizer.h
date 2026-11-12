@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <array>
 #include <string>
 
 #include <ros/ros.h>
@@ -31,6 +32,9 @@ class SceneVisualizer {
                      std::size_t index) const;
   void QueueStart(const scene::Pose2d& start, bool locked = false) const;
   void QueueGoal(const scene::Pose2d& goal) const;
+  void QueuePlanningStage(const std::array<double, 4>& bounds,
+                          const std::string& text) const;
+  void ClearPlanningStage() const;
   void QueueHybridSearch(
       const planning::HybridSearchProgress& progress) const;
   void QueueHybridPath(const planning::HybridAStartResult& path) const;

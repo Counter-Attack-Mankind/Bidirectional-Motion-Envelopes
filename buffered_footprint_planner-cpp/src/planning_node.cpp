@@ -1,10 +1,13 @@
 #include <cstdlib>
 #include <atomic>
+#include <deque>
+#include <iomanip>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
+#include <sstream>
 
 #include <ros/ros.h>
 #include <std_msgs/Bool.h>
@@ -17,6 +20,18 @@
 #include "visualize/trajectory_playback_visualizer.h"
 
 namespace {
+
+const char* StageName(planning_platform::PlanningStage stage) {
+  switch (stage) {
+    case planning_platform::PlanningStage::kDpMap: return "DP Map";
+    case planning_platform::PlanningStage::kHybridAStar: return "Hybrid A*";
+    case planning_platform::PlanningStage::kInitialGuess: return "Initial guess";
+    case planning_platform::PlanningStage::kNlpOptimization:
+      return "NLP optimization";
+    case planning_platform::PlanningStage::kComplete: return "Planning";
+  }
+  return "Planning";
+}
 
 class PlanningNode {
  public:
@@ -68,6 +83,12 @@ class PlanningNode {
   }
 
  private:
+  struct StageEvent {
+    planning_platform::PlanningStageUpdate update;
+    ros::WallTime received;
+    std::uint64_t generation = 0;
+  };
+
   bool Command(std::uint8_t action, const std::string& object_id,
                buffered_footprint_planner::SetObjectPose::Response* response) {
     buffered_footprint_planner::SetObjectPose service;
@@ -123,6 +144,11 @@ class PlanningNode {
       cancel_planning_ = true;
       ++scene_generation_;
       playback_.StopAndClear();
+      stage_active_ = false;
+      {
+        std::lock_guard<std::mutex> lock(event_mutex_);
+        pending_stage_updates_.clear();
+      }
       return;
     }
     const bool rising_edge = message->data && !last_locked_;
@@ -171,6 +197,12 @@ class PlanningNode {
                   [this, generation]() {
                     return cancel_planning_.load() || !ros::ok() ||
                            generation != scene_generation_.load();
+                  },
+                  [this, generation](
+                      planning_platform::PlanningStageUpdate update) {
+                    std::lock_guard<std::mutex> lock(event_mutex_);
+                    pending_stage_updates_.push_back(
+                        {std::move(update), ros::WallTime::now(), generation});
                   }));
           ReleaseScene();
           {
@@ -189,6 +221,8 @@ class PlanningNode {
     std::uint64_t hybrid_generation = 0;
     std::uint64_t progress_generation = 0;
     std::uint64_t result_generation = 0;
+    StageEvent stage_event;
+    bool has_stage_event = false;
     {
       std::lock_guard<std::mutex> lock(event_mutex_);
       progress = std::move(pending_hybrid_progress_);
@@ -197,8 +231,49 @@ class PlanningNode {
       hybrid_generation = pending_hybrid_generation_;
       result = std::move(completed_result_);
       result_generation = completed_generation_;
+      const ros::WallTime now = ros::WallTime::now();
+      if (!pending_stage_updates_.empty() &&
+          (now - last_stage_publish_).toSec() >= 0.1) {
+        stage_event = std::move(pending_stage_updates_.front());
+        pending_stage_updates_.pop_front();
+        has_stage_event = true;
+      }
     }
     const std::uint64_t current_generation = scene_generation_.load();
+    if (has_stage_event && stage_event.generation == current_generation) {
+      active_stage_ = std::move(stage_event.update);
+      stage_active_ = true;
+      if (active_stage_.state ==
+          planning_platform::PlanningStageState::kRunning) {
+        active_stage_begin_ = stage_event.received;
+      }
+    }
+    const ros::WallTime now = ros::WallTime::now();
+    if (stage_active_ &&
+        (now - last_stage_publish_).toSec() >= 0.1) {
+      double elapsed = active_stage_.stage_elapsed;
+      if (active_stage_.state ==
+          planning_platform::PlanningStageState::kRunning) {
+        elapsed = (now - active_stage_begin_).toSec();
+      }
+      std::ostringstream text;
+      text << std::fixed << std::setprecision(2);
+      if (active_stage_.stage == planning_platform::PlanningStage::kComplete &&
+          active_stage_.state ==
+              planning_platform::PlanningStageState::kSucceeded) {
+        text << "Planning succeeded | total: "
+             << active_stage_.total_elapsed << " s";
+      } else if (active_stage_.state ==
+                 planning_platform::PlanningStageState::kFailed) {
+        text << StageName(active_stage_.stage) << " failed: " << elapsed
+             << " s";
+      } else {
+        text << StageName(active_stage_.stage) << ": " << elapsed << " s";
+      }
+      visualizer_.QueuePlanningStage(scenario_.bounds(), text.str());
+      visualizer_.Trigger();
+      last_stage_publish_ = now;
+    }
     if (progress && progress_generation == current_generation) {
       visualizer_.QueueHybridSearch(*progress);
       visualizer_.Trigger();
@@ -266,6 +341,11 @@ class PlanningNode {
   std::shared_ptr<planning::HybridSearchProgress> pending_hybrid_progress_;
   std::shared_ptr<planning::HybridAStartResult> pending_hybrid_;
   std::shared_ptr<planning_platform::PlanningRunResult> completed_result_;
+  std::deque<StageEvent> pending_stage_updates_;
+  planning_platform::PlanningStageUpdate active_stage_;
+  ros::WallTime active_stage_begin_;
+  ros::WallTime last_stage_publish_;
+  bool stage_active_ = false;
   std::uint64_t pending_hybrid_generation_ = 0;
   std::uint64_t pending_progress_generation_ = 0;
   std::uint64_t completed_generation_ = 0;

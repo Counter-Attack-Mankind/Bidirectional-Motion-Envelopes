@@ -30,6 +30,15 @@ Visualization Manager:
       Name: Stage1Markers
       Queue Size: 100
       Value: true
+    - Class: rviz/InteractiveMarkers
+      Enable Transparency: true
+      Enabled: true
+      Name: SceneEditor
+      Show Axes: false
+      Show Descriptions: true
+      Show Visual Aids: false
+      Update Topic: /simulation/scene_editor/update
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0

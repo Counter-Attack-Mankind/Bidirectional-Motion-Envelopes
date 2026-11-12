@@ -1,5 +1,6 @@
 #include "planning/planning_pipeline.h"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <utility>
@@ -24,8 +25,16 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
                                         const std::string& mode,
                                         HybridCompleteCallback hybrid_complete,
                                         HybridProgressCallback hybrid_progress,
-                                        CancellationCallback cancellation) const {
+                                        CancellationCallback cancellation,
+                                        StageCallback stage_callback) const {
   PlanningRunResult result;
+  const auto pipeline_begin = std::chrono::steady_clock::now();
+  auto notify_stage = [&](PlanningStage stage, PlanningStageState state,
+                          double stage_elapsed, const std::string& message) {
+    if (!stage_callback) return;
+    stage_callback({stage, state, stage_elapsed, SecondsSince(pipeline_begin),
+                    message});
+  };
   experiment::ExperimentLogger logger;
   std::string error;
   if (!logger.CreateRunDirectory(configuration_.results_root, mode,
@@ -55,10 +64,29 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
                                 snapshot.obstacle_polygons(),
                                 configuration_.nlp.save_debug_data);
   const auto hybrid_begin = std::chrono::steady_clock::now();
+  bool hybrid_stage_started = false;
+  double hybrid_stage_begin_elapsed = 0.0;
+  planning::HybridSearchStage last_search_stage =
+      planning::HybridSearchStage::kBuildingDpMap;
+  notify_stage(PlanningStage::kDpMap, PlanningStageState::kRunning, 0.0,
+               "DP Map");
+  auto progress_forwarder =
+      [&, hybrid_progress = std::move(hybrid_progress)](
+          planning::HybridSearchProgress progress) mutable {
+        last_search_stage = progress.stage;
+        if (progress.stage == planning::HybridSearchStage::kHybridSearch &&
+            !hybrid_stage_started) {
+          hybrid_stage_started = true;
+          hybrid_stage_begin_elapsed = progress.elapsed_seconds;
+          notify_stage(PlanningStage::kHybridAStar,
+                       PlanningStageState::kRunning, 0.0, "Hybrid A*");
+        }
+        if (hybrid_progress) hybrid_progress(std::move(progress));
+      };
   result.hybrid_succeeded = planner.Plan(
       snapshot.start.x, snapshot.start.y, snapshot.start.yaw,
       snapshot.goal.x, snapshot.goal.y, snapshot.goal.yaw,
-      &result.hybrid_path, std::move(hybrid_progress),
+      &result.hybrid_path, std::move(progress_forwarder),
       std::move(cancellation));
   result.hybrid_elapsed = SecondsSince(hybrid_begin);
   result.hybrid_timed_out = planner.timed_out();
@@ -68,6 +96,16 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
               " s (" + std::to_string(planner.timeout_seconds()) +
               " s limit)"
         : "Hybrid A* failed";
+    const PlanningStage failed_stage =
+        last_search_stage == planning::HybridSearchStage::kBuildingDpMap
+            ? PlanningStage::kDpMap
+            : PlanningStage::kHybridAStar;
+    notify_stage(failed_stage, PlanningStageState::kFailed,
+                 failed_stage == PlanningStage::kHybridAStar
+                     ? std::max(0.0, result.hybrid_elapsed -
+                                        hybrid_stage_begin_elapsed)
+                     : result.hybrid_elapsed,
+                 result.status);
     logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
                         &error);
     return result;
@@ -81,6 +119,8 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
   }
 
   const auto initial_begin = std::chrono::steady_clock::now();
+  notify_stage(PlanningStage::kInitialGuess, PlanningStageState::kRunning,
+               0.0, "Initial guess");
   result.initial_guess_succeeded = optimizer::BuildInitialGuess(
       result.hybrid_path, configuration_.vehicle, configuration_.initial_guess,
       &result.initial_guess, &result.initial_diagnostics, &error,
@@ -89,6 +129,8 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
   if (!result.initial_guess_succeeded) {
     result.status = "Initial guess failed: " + error;
     result.optimization.status = result.status;
+    notify_stage(PlanningStage::kInitialGuess, PlanningStageState::kFailed,
+                 result.initial_guess_elapsed, result.status);
     logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
                         &error);
     return result;
@@ -109,10 +151,14 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
   }
   const std::string ipopt_log =
       (debug_directory / "ipopt.log").string();
+  const auto nlp_begin = std::chrono::steady_clock::now();
+  notify_stage(PlanningStage::kNlpOptimization,
+               PlanningStageState::kRunning, 0.0, "NLP optimization");
   result.optimization = optimizer::SolveFootprintNlp(
       result.initial_guess, configuration_.vehicle,
       snapshot.obstacle_polygons(), snapshot.bounds, configuration_.nlp,
       ipopt_log);
+  const double nlp_elapsed = SecondsSince(nlp_begin);
   result.success = result.optimization.success;
   result.status = !result.success && result.optimization.solver_succeeded
       ? "NLP post-solve validation failed after " + result.optimization.status
@@ -131,6 +177,14 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
   } else {
     optimizer::SaveNlpFailureDiagnostics(debug_directory.string(),
                                          result.optimization, &error);
+  }
+  if (!result.success) {
+    notify_stage(PlanningStage::kNlpOptimization,
+                 PlanningStageState::kFailed, nlp_elapsed, result.status);
+  }
+  if (result.success) {
+    notify_stage(PlanningStage::kComplete, PlanningStageState::kSucceeded,
+                 nlp_elapsed, result.status);
   }
   logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
                       &error);

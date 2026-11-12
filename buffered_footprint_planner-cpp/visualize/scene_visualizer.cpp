@@ -82,6 +82,32 @@ void SceneVisualizer::QueueGoal(const scene::Pose2d& goal) const {
   QueuePose(goal, "goal", "GOAL", Color::Magenta);
 }
 
+void SceneVisualizer::QueuePlanningStage(
+    const std::array<double, 4>& bounds, const std::string& text) const {
+  if (text.empty()) {
+    ClearPlanningStage();
+    return;
+  }
+  const double map_width = std::max(0.1, bounds[1] - bounds[0]);
+  const double map_height = std::max(0.1, bounds[3] - bounds[2]);
+  const double margin = std::min(0.10, 0.04 * map_height);
+  const double available_width = std::max(0.1, map_width - 2.0 * margin);
+  const double nominal_scale = std::min(0.075, 0.045 * map_height);
+  const double estimated_units = std::max<std::size_t>(1, text.size()) * 0.55;
+  const double text_scale = std::max(
+      0.04, std::min(nominal_scale, available_width / estimated_units));
+  const double estimated_width =
+      std::min(available_width, estimated_units * text_scale);
+  const double x = bounds[0] + margin + 0.5 * estimated_width;
+  const double y = bounds[3] - margin - 0.5 * text_scale;
+  VisualizationPlot::PlotText(x, y, text, text_scale, Color::Black, 0,
+                              "planning_stage_status");
+}
+
+void SceneVisualizer::ClearPlanningStage() const {
+  VisualizationPlot::ClearMarkers("planning_stage_status", 0, 0);
+}
+
 void SceneVisualizer::QueueHybridPath(
     const planning::HybridAStartResult& path) const {
   if (path.x.empty() || path.x.size() != path.y.size()) return;
@@ -100,7 +126,6 @@ void SceneVisualizer::QueueHybridSearch(
     VisualizationPlot::ClearMarkers("hybrid_search_expanded", 0, 0);
     VisualizationPlot::ClearMarkers("hybrid_search_backtrack", 0, 0);
     VisualizationPlot::ClearMarkers("hybrid_search_current", 0, 0);
-    VisualizationPlot::ClearMarkers("hybrid_search_status", 0, 0);
     const double cell_size = std::max(0.001,
                                       progress.dp_grid_resolution * 0.82);
     VisualizationPlot::PlotGridCells(
@@ -112,25 +137,6 @@ void SceneVisualizer::QueueHybridSearch(
         Color::fromRGB(0.05f, 0.22f, 0.75f), 0, "dp_map_wavefront",
         0.025, 0.018);
 
-    const char* state = "Building DP Map";
-    if (progress.status == planning::HybridSearchStatus::kTimedOut) {
-      state = "DP Map timed out";
-    } else if (progress.status == planning::HybridSearchStatus::kCancelled) {
-      state = "DP Map cancelled";
-    } else if (progress.status == planning::HybridSearchStatus::kFailed) {
-      state = "DP Map failed";
-    }
-    std::ostringstream text;
-    text << state << " | elapsed=" << std::fixed << std::setprecision(1)
-         << progress.elapsed_seconds << "s | settled="
-         << progress.dp_statistics.settled_cells << " | queue="
-         << progress.dp_statistics.queue_size;
-    const bool has_wavefront = !progress.dp_wavefront_x.empty();
-    const double text_x = has_wavefront ? progress.dp_wavefront_x.back() : 0.0;
-    const double text_y = has_wavefront ? progress.dp_wavefront_y.back() + 0.18
-                                      : 0.0;
-    VisualizationPlot::PlotText(text_x, text_y, text.str(), 0.065,
-                                Color::Black, 0, "dp_map_status");
     return;
   }
 
@@ -156,22 +162,6 @@ void SceneVisualizer::QueueHybridSearch(
         0.035, 0.05);
   }
 
-  const char* state = "Searching";
-  switch (progress.status) {
-    case planning::HybridSearchStatus::kSucceeded: state = "Succeeded"; break;
-    case planning::HybridSearchStatus::kFailed: state = "Failed"; break;
-    case planning::HybridSearchStatus::kTimedOut: state = "Timed out"; break;
-    case planning::HybridSearchStatus::kCancelled: state = "Cancelled"; break;
-    case planning::HybridSearchStatus::kSearching: break;
-  }
-  std::ostringstream text;
-  text << state << " | elapsed=" << std::fixed << std::setprecision(1)
-       << progress.elapsed_seconds << "s | expanded="
-       << progress.expanded_count;
-  const double text_x = progress.has_current ? progress.current_x : 0.0;
-  const double text_y = progress.has_current ? progress.current_y + 0.22 : 0.0;
-  VisualizationPlot::PlotText(text_x, text_y, text.str(), 0.065,
-                              Color::Black, 0, "hybrid_search_status");
 }
 
 void SceneVisualizer::QueueOptimizedTrajectory(

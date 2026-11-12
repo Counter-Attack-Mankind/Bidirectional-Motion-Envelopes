@@ -1,8 +1,11 @@
 #include <cstdlib>
+#include <deque>
 #include <filesystem>
+#include <iomanip>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <sstream>
 #include <utility>
 
 #include <ros/ros.h>
@@ -12,6 +15,41 @@
 #include "scene/scene_storage.h"
 #include "visualize/scene_visualizer.h"
 #include "visualize/trajectory_playback_visualizer.h"
+
+namespace {
+
+const char* StageName(planning_platform::PlanningStage stage) {
+  switch (stage) {
+    case planning_platform::PlanningStage::kDpMap: return "DP Map";
+    case planning_platform::PlanningStage::kHybridAStar: return "Hybrid A*";
+    case planning_platform::PlanningStage::kInitialGuess: return "Initial guess";
+    case planning_platform::PlanningStage::kNlpOptimization:
+      return "NLP optimization";
+    case planning_platform::PlanningStage::kComplete: return "Planning";
+  }
+  return "Planning";
+}
+
+std::string StageText(const planning_platform::PlanningStageUpdate& update,
+                      const ros::WallTime& begin) {
+  double elapsed = update.stage_elapsed;
+  if (update.state == planning_platform::PlanningStageState::kRunning) {
+    elapsed = (ros::WallTime::now() - begin).toSec();
+  }
+  std::ostringstream text;
+  text << std::fixed << std::setprecision(2);
+  if (update.stage == planning_platform::PlanningStage::kComplete &&
+      update.state == planning_platform::PlanningStageState::kSucceeded) {
+    text << "Planning succeeded | total: " << update.total_elapsed << " s";
+  } else if (update.state == planning_platform::PlanningStageState::kFailed) {
+    text << StageName(update.stage) << " failed: " << elapsed << " s";
+  } else {
+    text << StageName(update.stage) << ": " << elapsed << " s";
+  }
+  return text.str();
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
   ros::init(argc, argv, "buffered_footprint_experiment");
@@ -48,6 +86,10 @@ int main(int argc, char** argv) {
   std::shared_ptr<planning::HybridSearchProgress> pending_search_progress;
   std::shared_ptr<planning::HybridSearchProgress> latest_search_progress;
   std::shared_ptr<planning::HybridAStartResult> completed_hybrid_path;
+  std::shared_ptr<planning_platform::PlanningStageUpdate> active_stage;
+  ros::WallTime active_stage_begin;
+  std::deque<std::pair<planning_platform::PlanningStageUpdate, ros::WallTime>>
+      pending_stage_updates;
   bool search_finished = false;
   {
     std::lock_guard<std::mutex> visualization_lock(visualization_mutex);
@@ -107,9 +149,53 @@ int main(int argc, char** argv) {
           // map, obstacles, start, and goal.
           visualizer.QueueScene(snapshot);
           visualizer.QueueHybridSearch(*progress);
+          std::shared_ptr<planning_platform::PlanningStageUpdate> stage;
+          ros::WallTime stage_begin;
+          {
+            std::lock_guard<std::mutex> lock(search_progress_mutex);
+            stage = active_stage;
+            stage_begin = active_stage_begin;
+          }
+          if (stage) {
+            visualizer.QueuePlanningStage(snapshot.bounds,
+                                          StageText(*stage, stage_begin));
+          }
           visualizer.Trigger();
         });
   }
+  ros::Timer stage_timer = private_node.createTimer(
+      ros::Duration(0.1),
+      [&](const ros::TimerEvent&) {
+        std::shared_ptr<planning_platform::PlanningStageUpdate> stage;
+        std::shared_ptr<planning::HybridSearchProgress> search_progress;
+        std::shared_ptr<planning::HybridAStartResult> hybrid_path;
+        ros::WallTime stage_begin;
+        {
+          std::lock_guard<std::mutex> lock(search_progress_mutex);
+          if (!pending_stage_updates.empty()) {
+            active_stage =
+                std::make_shared<planning_platform::PlanningStageUpdate>(
+                    std::move(pending_stage_updates.front().first));
+            active_stage_begin = pending_stage_updates.front().second;
+            pending_stage_updates.pop_front();
+          }
+          stage = active_stage;
+          stage_begin = active_stage_begin;
+          search_progress = latest_search_progress;
+          hybrid_path = completed_hybrid_path;
+        }
+        if (!stage) return;
+        std::lock_guard<std::mutex> visualization_lock(visualization_mutex);
+        visualizer.QueueScene(snapshot);
+        if (hybrid_path) {
+          visualizer.QueueHybridPath(*hybrid_path);
+        } else if (search_progress) {
+          visualizer.QueueHybridSearch(*search_progress);
+        }
+        visualizer.QueuePlanningStage(snapshot.bounds,
+                                      StageText(*stage, stage_begin));
+        visualizer.Trigger();
+      });
 
   experiment::ExperimentRunner runner(configuration);
   planning_platform::PlanningRunResult result;
@@ -141,8 +227,24 @@ int main(int argc, char** argv) {
                   pending_search_progress = progress_snapshot;
                   latest_search_progress = std::move(progress_snapshot);
                 })
-          : planning_platform::PlanningPipeline::HybridProgressCallback{});
+          : planning_platform::PlanningPipeline::HybridProgressCallback{},
+      [&](planning_platform::PlanningStageUpdate update) {
+        std::lock_guard<std::mutex> lock(search_progress_mutex);
+        pending_stage_updates.emplace_back(std::move(update),
+                                           ros::WallTime::now());
+      });
+  {
+    std::lock_guard<std::mutex> lock(search_progress_mutex);
+    if (!pending_stage_updates.empty()) {
+      active_stage =
+          std::make_shared<planning_platform::PlanningStageUpdate>(
+              std::move(pending_stage_updates.back().first));
+      active_stage_begin = pending_stage_updates.back().second;
+      pending_stage_updates.clear();
+    }
+  }
   scene_republish_timer.stop();
+  stage_timer.stop();
   ROS_INFO("Initial guess %s; NLP nodes: %zu; elapsed: %.3f s",
            result.initial_guess_succeeded ? "succeeded" : "failed",
            result.initial_guess.nodes.size(), result.initial_guess_elapsed);
@@ -194,9 +296,13 @@ int main(int argc, char** argv) {
       ros::Duration(1.0),
       [&](const ros::TimerEvent&) {
         std::shared_ptr<planning::HybridSearchProgress> search_progress;
+        std::shared_ptr<planning_platform::PlanningStageUpdate> stage;
+        ros::WallTime stage_begin;
         {
           std::lock_guard<std::mutex> lock(search_progress_mutex);
           search_progress = latest_search_progress;
+          stage = active_stage;
+          stage_begin = active_stage_begin;
         }
         std::lock_guard<std::mutex> visualization_lock(visualization_mutex);
         visualizer.QueueScene(snapshot);
@@ -204,6 +310,10 @@ int main(int argc, char** argv) {
           visualizer.QueueHybridPath(result.hybrid_path);
         } else if (search_progress) {
           visualizer.QueueHybridSearch(*search_progress);
+        }
+        if (stage) {
+          visualizer.QueuePlanningStage(snapshot.bounds,
+                                        StageText(*stage, stage_begin));
         }
         if (playback_started) {
           visualizer.QueueOptimizedTrajectory(

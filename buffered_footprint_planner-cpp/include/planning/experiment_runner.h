@@ -18,7 +18,9 @@ class ExperimentRunner {
                planning_platform::PlanningPipeline::HybridCompleteCallback
                    hybrid_complete = {},
                planning_platform::PlanningPipeline::HybridProgressCallback
-                   hybrid_progress = {}) const;
+                   hybrid_progress = {},
+               planning_platform::PlanningPipeline::StageCallback
+                   stage_callback = {}) const;
 
  private:
   planning_platform::PlanningConfiguration configuration_;

@@ -11,6 +11,24 @@
 
 namespace planning_platform {
 
+enum class PlanningStage {
+  kDpMap,
+  kHybridAStar,
+  kInitialGuess,
+  kNlpOptimization,
+  kComplete,
+};
+
+enum class PlanningStageState { kRunning, kSucceeded, kFailed };
+
+struct PlanningStageUpdate {
+  PlanningStage stage = PlanningStage::kDpMap;
+  PlanningStageState state = PlanningStageState::kRunning;
+  double stage_elapsed = 0.0;
+  double total_elapsed = 0.0;
+  std::string message;
+};
+
 struct PlanningRunResult {
   bool scene_valid = false;
   bool hybrid_succeeded = false;
@@ -34,6 +52,7 @@ class PlanningPipeline {
       std::function<void(const planning::HybridAStartResult&, double)>;
   using HybridProgressCallback = planning::HybridAStar::ProgressCallback;
   using CancellationCallback = planning::HybridAStar::CancellationCallback;
+  using StageCallback = std::function<void(PlanningStageUpdate)>;
 
   explicit PlanningPipeline(PlanningConfiguration configuration);
 
@@ -41,7 +60,8 @@ class PlanningPipeline {
                         const std::string& mode,
                         HybridCompleteCallback hybrid_complete = {},
                         HybridProgressCallback hybrid_progress = {},
-                        CancellationCallback cancellation = {}) const;
+                        CancellationCallback cancellation = {},
+                        StageCallback stage_callback = {}) const;
 
  private:
   PlanningConfiguration configuration_;

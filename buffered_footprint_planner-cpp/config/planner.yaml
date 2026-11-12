@@ -28,4 +28,4 @@ delta_t: 0.5
 analytic_expansion_cost: 20.0
 dubins_phi_gamma: 1.1
 explore_node_num: 2000000
-hybrid_astar_timeout: 8.0
+hybrid_astar_timeout: 2.0

@@ -10,6 +10,7 @@
   <build_depend>pkg-config</build_depend>
   <build_depend>message_generation</build_depend>
   <depend>geometry_msgs</depend>
+  <depend>interactive_markers</depend>
   <depend>roscpp</depend>
   <exec_depend>rospy</exec_depend>
   <depend>std_msgs</depend>

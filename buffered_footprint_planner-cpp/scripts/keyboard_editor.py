@@ -186,6 +186,18 @@ class KeyboardSceneEditor:
         return True
 
     def _move(self, key):
+        # Mouse edits and keyboard edits share the simulation service. Refresh
+        # immediately before applying a key step so a stale terminal-side pose
+        # can never overwrite a newer RViz drag.
+        response = self._call(SetObjectPoseRequest.QUERY_POSE,
+                              self._selected_id)
+        if response is None or not response.success:
+            message = response.message if response is not None else "no response"
+            with self._print_lock:
+                print("\nCannot refresh {}: {}".format(
+                    self._selected_id, message), flush=True)
+            return
+        self._x, self._y, self._yaw = response.x, response.y, response.yaw
         x, y, yaw = self._x, self._y, self._yaw
         if key == "W":
             y += self._translation_step

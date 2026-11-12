@@ -1,15 +1,23 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <string>
 
 #include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <interactive_markers/interactive_marker_server.h>
 #include <ros/ros.h>
 #include <std_msgs/Bool.h>
 #include <std_msgs/UInt64.h>
 #include <tf2/LinearMath/Quaternion.h>
+#include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <visualization_msgs/InteractiveMarker.h>
+#include <visualization_msgs/InteractiveMarkerControl.h>
+#include <visualization_msgs/InteractiveMarkerFeedback.h>
+#include <visualization_msgs/Marker.h>
 
 #include "buffered_footprint_planner/SetObjectPose.h"
 #include "common/math/math_utils.h"
@@ -45,6 +53,10 @@ class SimulationNode {
 
     visualizer_.Initialize(private_node_, scenario_.frame_id(), vehicle_,
                            marker_topic_);
+    interactive_server_ =
+        std::make_unique<interactive_markers::InteractiveMarkerServer>(
+            "/simulation/scene_editor", "", false);
+    BuildInteractiveMarkers();
     obstacle_poses_publisher_ = private_node_.advertise<geometry_msgs::PoseArray>(
         "/simulation/scene_obstacle_poses", 1, true);
     vehicle_pose_publisher_ = private_node_.advertise<geometry_msgs::PoseStamped>(
@@ -61,7 +73,7 @@ class SimulationNode {
         ros::Duration(0.1), &SimulationNode::CheckStationary, this);
 
     QueueStaticScene();
-    QueueVehicle();
+    visualizer_.QueuePlanningStage(scenario_.bounds(), "Scene editing");
     visualizer_.Trigger();
     PublishSceneState();
     ROS_INFO("Scene editor ready; run 'rosrun buffered_footprint_planner "
@@ -105,22 +117,7 @@ class SimulationNode {
 
   void QueueStaticScene() const {
     visualizer_.QueueMap(scenario_.Snapshot(vehicle_pose_));
-    for (std::size_t i = 0; i < scenario_.obstacles().size(); ++i) {
-      QueueObstacle(i);
-    }
     visualizer_.QueueGoal(scenario_.goal());
-  }
-
-  void QueueObstacle(std::size_t index) const {
-    visualizer_.QueueObstacle(scenario_.obstacles()[index], index);
-  }
-
-  void QueueVehicle() const {
-    visualizer_.QueueStart(vehicle_pose_);
-  }
-
-  void QueueLockedStart() const {
-    visualizer_.QueueStart(locked_start_, true);
   }
 
   void ClearTaskMarkers() const {
@@ -132,6 +129,7 @@ class SimulationNode {
     editing_active_ = true;
     start_locked_ = false;
     ClearTaskMarkers();
+    visualizer_.QueuePlanningStage(scenario_.bounds(), "Scene editing");
     visualizer_.Trigger();
     PublishSceneState();
     ROS_INFO("Scene editing resumed; previous planning task invalidated");
@@ -146,11 +144,13 @@ class SimulationNode {
                             request.object_id, response);
       }
       planning_active_ = true;
+      SetInteractionEnabled(false);
       return FillResponse(true, "Planning scene locked", request.object_id,
                           response);
     }
     if (request.action == request.END_PLANNING) {
       planning_active_ = false;
+      SetInteractionEnabled(true);
       return FillResponse(true, "Planning scene released", request.object_id,
                           response);
     }
@@ -163,8 +163,9 @@ class SimulationNode {
       start_locked_ = false;
       stable_pose_ = vehicle_pose_;
       stable_since_ = ros::Time::now();
+      last_countdown_seconds_ = -1;
       ClearTaskMarkers();
-      visualizer_.Trigger();
+      QueueCountdown();
       PublishSceneState();
       ROS_INFO("Editing finished; checking Vehicle 1 stability for %.1f s",
                stationary_duration_);
@@ -183,37 +184,51 @@ class SimulationNode {
                           request.object_id, response);
     }
 
-    BeginEditing();
-    const double yaw = common::math::NormalizeAngle(request.yaw);
-    if (request.object_id == vehicle_id_) {
-      const VehiclePose candidate{request.x, request.y, yaw};
+    std::string message;
+    if (!ApplyPose(request.object_id, request.x, request.y, request.yaw,
+                   &message)) {
+      return FillResponse(false, message, request.object_id, response);
+    }
+    return FillResponse(true, "Pose updated", request.object_id, response);
+  }
+
+  bool ApplyPose(const std::string& object_id, double x, double y, double yaw,
+                 std::string* message) {
+    if (planning_active_) {
+      if (message) *message = "Editing is disabled during planning";
+      return false;
+    }
+    yaw = common::math::NormalizeAngle(yaw);
+    if (object_id == vehicle_id_) {
+      const VehiclePose candidate{x, y, yaw};
       if (!ValidateVehiclePose(candidate)) {
-        return FillResponse(false, "Vehicle leaves map or collides",
-                            request.object_id, response);
+        if (message) *message = "Vehicle leaves map or collides";
+        return false;
       }
       vehicle_pose_ = candidate;
-      QueueVehicle();
     } else {
-      std::size_t index = 0;
-      for (; index < scenario_.obstacles().size(); ++index) {
-        if (scenario_.obstacles()[index].id == request.object_id) break;
+      const auto found = std::find_if(
+          scenario_.obstacles().begin(), scenario_.obstacles().end(),
+          [&](const scene::SceneObstacle& obstacle) {
+            return obstacle.id == object_id;
+          });
+      if (found == scenario_.obstacles().end()) {
+        if (message) *message = "Unknown object";
+        return false;
       }
-      if (index == scenario_.obstacles().size()) {
-        return FillResponse(false, "Unknown object", request.object_id,
-                            response);
+      if (!scenario_.SetObstaclePose(object_id, x, y, yaw)) {
+        if (message) *message = "Obstacle would leave map bounds";
+        return false;
       }
-      if (!scenario_.SetObstaclePose(request.object_id, request.x, request.y,
-                                     yaw)) {
-        return FillResponse(false, "Obstacle would leave map bounds",
-                            request.object_id, response);
-      }
-      QueueObstacle(index);
     }
-
+    // Only a valid edit invalidates a completed plan or restarts the lock
+    // sequence. Rejected mouse/key poses leave the current result untouched.
+    BeginEditing();
     ++scene_revision_;
-    visualizer_.Trigger();
+    SyncInteractiveMarker(object_id);
     PublishSceneState();
-    return FillResponse(true, "Pose updated", request.object_id, response);
+    if (message) *message = "Pose updated";
+    return true;
   }
 
   bool FillResponse(
@@ -242,6 +257,189 @@ class SimulationNode {
     return true;
   }
 
+  geometry_msgs::Pose InteractivePose(const std::string& object_id) const {
+    geometry_msgs::Pose pose;
+    if (object_id == vehicle_id_) {
+      pose.position.x = vehicle_pose_.x;
+      pose.position.y = vehicle_pose_.y;
+      pose.orientation = QuaternionFromYaw(vehicle_pose_.yaw);
+      return pose;
+    }
+    for (const auto& obstacle : scenario_.obstacles()) {
+      if (obstacle.id != object_id) continue;
+      pose.position.x = obstacle.x;
+      pose.position.y = obstacle.y;
+      pose.orientation = QuaternionFromYaw(obstacle.yaw);
+      return pose;
+    }
+    pose.orientation.w = 1.0;
+    return pose;
+  }
+
+  visualization_msgs::Marker BoxMarker(double length, double width,
+                                        double center_x, float red,
+                                        float green, float blue,
+                                        float alpha) const {
+    visualization_msgs::Marker marker;
+    marker.type = visualization_msgs::Marker::CUBE;
+    marker.pose.position.x = center_x;
+    marker.pose.position.z = 0.015;
+    marker.pose.orientation.w = 1.0;
+    marker.scale.x = length;
+    marker.scale.y = width;
+    marker.scale.z = 0.03;
+    marker.color.r = red;
+    marker.color.g = green;
+    marker.color.b = blue;
+    marker.color.a = alpha;
+    return marker;
+  }
+
+  visualization_msgs::Marker OutlineMarker(double rear_x, double front_x,
+                                            double width, float red,
+                                            float green, float blue) const {
+    visualization_msgs::Marker marker;
+    marker.type = visualization_msgs::Marker::LINE_STRIP;
+    marker.pose.orientation.w = 1.0;
+    marker.scale.x = 0.014;
+    marker.color.r = red;
+    marker.color.g = green;
+    marker.color.b = blue;
+    marker.color.a = 1.0;
+    const std::pair<double, double> corners[] = {
+        {rear_x, 0.5 * width}, {front_x, 0.5 * width},
+        {front_x, -0.5 * width}, {rear_x, -0.5 * width},
+        {rear_x, 0.5 * width}};
+    for (const auto& corner : corners) {
+      geometry_msgs::Point point;
+      point.x = corner.first;
+      point.y = corner.second;
+      point.z = 0.035;
+      marker.points.push_back(point);
+    }
+    return marker;
+  }
+
+  visualization_msgs::InteractiveMarker MakeInteractiveMarker(
+      const std::string& object_id, double length, double width,
+      bool is_vehicle, bool interactive) const {
+    visualization_msgs::InteractiveMarker marker;
+    marker.header.frame_id = scenario_.frame_id();
+    marker.name = object_id;
+    marker.description = object_id;
+    marker.pose = InteractivePose(object_id);
+    marker.scale = std::max(0.28, 1.5 * std::max(length, width));
+
+    visualization_msgs::InteractiveMarkerControl visual;
+    visual.name = "object";
+    visual.always_visible = true;
+    if (is_vehicle) {
+      const double rear = -vehicle_.rear_hang;
+      const double front = vehicle_.wheel_base + vehicle_.front_hang;
+      visual.markers.push_back(BoxMarker(front - rear, width,
+                                         0.5 * (front + rear),
+                                         0.25f, 0.78f, 0.25f, 0.22f));
+      visual.markers.push_back(
+          OutlineMarker(rear, front, width, 0.0f, 0.65f, 0.0f));
+      visualization_msgs::Marker heading;
+      heading.type = visualization_msgs::Marker::ARROW;
+      heading.pose.orientation.w = 1.0;
+      heading.scale.x = std::max(0.12, front);
+      heading.scale.y = 0.025;
+      heading.scale.z = 0.04;
+      heading.color.g = 0.65f;
+      heading.color.a = 1.0f;
+      visual.markers.push_back(heading);
+    } else {
+      visual.markers.push_back(
+          BoxMarker(length, width, 0.0, 0.55f, 0.55f, 0.55f, 1.0f));
+      visual.markers.push_back(OutlineMarker(-0.5 * length, 0.5 * length,
+                                             width, 0.0f, 0.0f, 0.0f));
+    }
+    marker.controls.push_back(visual);
+
+    if (interactive) {
+      visualization_msgs::InteractiveMarkerControl move;
+      move.name = "move_xy";
+      move.orientation.w = 0.7071067812;
+      move.orientation.y = 0.7071067812;
+      move.interaction_mode =
+          visualization_msgs::InteractiveMarkerControl::MOVE_PLANE;
+      marker.controls.push_back(move);
+      visualization_msgs::InteractiveMarkerControl rotate = move;
+      rotate.name = "rotate_z";
+      rotate.interaction_mode =
+          visualization_msgs::InteractiveMarkerControl::ROTATE_AXIS;
+      marker.controls.push_back(rotate);
+    }
+    return marker;
+  }
+
+  void BuildInteractiveMarkers(bool interactive = true) {
+    if (!interactive_server_) return;
+    interaction_enabled_ = interactive;
+    interactive_server_->clear();
+    for (const auto& obstacle : scenario_.obstacles()) {
+      interactive_server_->insert(
+          MakeInteractiveMarker(obstacle.id, obstacle.length, obstacle.width,
+                                false, interactive),
+          [this](const visualization_msgs::InteractiveMarkerFeedbackConstPtr&
+                     feedback) { HandleInteractiveFeedback(feedback); });
+    }
+    const double vehicle_length =
+        vehicle_.rear_hang + vehicle_.wheel_base + vehicle_.front_hang;
+    interactive_server_->insert(
+        MakeInteractiveMarker(vehicle_id_, vehicle_length, vehicle_.width,
+                              true, interactive),
+        [this](const visualization_msgs::InteractiveMarkerFeedbackConstPtr&
+                   feedback) { HandleInteractiveFeedback(feedback); });
+    interactive_server_->applyChanges();
+  }
+
+  void SetInteractionEnabled(bool enabled) {
+    if (enabled == interaction_enabled_) return;
+    BuildInteractiveMarkers(enabled);
+  }
+
+  void SyncInteractiveMarker(const std::string& object_id) {
+    if (!interactive_server_) return;
+    interactive_server_->setPose(object_id, InteractivePose(object_id));
+    interactive_server_->applyChanges();
+  }
+
+  void HandleInteractiveFeedback(
+      const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback) {
+    if (!feedback ||
+        feedback->event_type !=
+            visualization_msgs::InteractiveMarkerFeedback::MOUSE_UP) {
+      return;
+    }
+    if (!interaction_enabled_ || planning_active_) {
+      SyncInteractiveMarker(feedback->marker_name);
+      return;
+    }
+    std::string message;
+    const double yaw = tf2::getYaw(feedback->pose.orientation);
+    if (!ApplyPose(feedback->marker_name, feedback->pose.position.x,
+                   feedback->pose.position.y, yaw, &message)) {
+      SyncInteractiveMarker(feedback->marker_name);
+      ROS_WARN("Interactive edit rejected for '%s': %s",
+               feedback->marker_name.c_str(), message.c_str());
+    }
+  }
+
+  void QueueCountdown() {
+    const double elapsed = (ros::Time::now() - stable_since_).toSec();
+    const int remaining = std::max(
+        1, static_cast<int>(std::ceil(stationary_duration_ - elapsed)));
+    if (remaining == last_countdown_seconds_) return;
+    last_countdown_seconds_ = remaining;
+    visualizer_.QueuePlanningStage(
+        scenario_.bounds(),
+        "Start locking: " + std::to_string(remaining) + " s");
+    visualizer_.Trigger();
+  }
+
   void CheckStationary(const ros::TimerEvent&) {
     if (editing_active_ || planning_active_ || start_locked_) return;
     const double position_change =
@@ -252,13 +450,17 @@ class SimulationNode {
     if (position_change > position_threshold_ || yaw_change > yaw_threshold_) {
       stable_pose_ = vehicle_pose_;
       stable_since_ = ros::Time::now();
+      last_countdown_seconds_ = -1;
       return;
     }
-    if ((ros::Time::now() - stable_since_).toSec() < stationary_duration_) return;
+    if ((ros::Time::now() - stable_since_).toSec() < stationary_duration_) {
+      QueueCountdown();
+      return;
+    }
 
     locked_start_ = vehicle_pose_;
     start_locked_ = true;
-    QueueLockedStart();
+    visualizer_.QueuePlanningStage(scenario_.bounds(), "Start locked");
     visualizer_.Trigger();
     PublishSceneState();
     ROS_INFO("Vehicle 1 start locked at (%.3f, %.3f, %.1f deg)",
@@ -311,6 +513,8 @@ class SimulationNode {
   double stationary_duration_ = 3.0;
   double position_threshold_ = 0.002;
   double yaw_threshold_ = 0.0087266463;
+  int last_countdown_seconds_ = -1;
+  bool interaction_enabled_ = true;
   ros::Time stable_since_;
   std::uint64_t scene_revision_ = 0;
   const std::string marker_topic_ = "/buffered_footprint_planner/markers";
@@ -322,6 +526,8 @@ class SimulationNode {
   ros::Publisher revision_publisher_;
   ros::ServiceServer command_service_;
   ros::Timer stationary_timer_;
+  std::unique_ptr<interactive_markers::InteractiveMarkerServer>
+      interactive_server_;
 };
 
 }  // namespace

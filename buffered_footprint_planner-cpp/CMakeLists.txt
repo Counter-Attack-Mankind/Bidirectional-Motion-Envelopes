@@ -17,6 +17,7 @@ find_package(yaml-cpp REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
+  interactive_markers
   message_generation
   roscpp
   std_msgs
@@ -35,7 +36,7 @@ catkin_package(
             swept_area_visualizer trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
             planning_config experiment_runner
   CATKIN_DEPENDS geometry_msgs message_runtime roscpp std_msgs tf2
-                 tf2_geometry_msgs visualization_msgs
+                 tf2_geometry_msgs visualization_msgs interactive_markers
 )
 
 include_directories(
