@@ -44,9 +44,9 @@ void SceneVisualizer::QueueObstacle(const scene::SceneObstacle& obstacle,
                                        "scene_obstacle_fill", 0.01);
   VisualizationPlot::PlotPolygon(polygon, 0.012, Color::Black, marker_id,
                                  "scene_obstacle_outline");
-  VisualizationPlot::PlotText(obstacle.x, obstacle.y, obstacle.id, 0.12,
-                              Color::Black, marker_id,
-                              "scene_obstacle_label");
+  VisualizationPlot::PlotText(obstacle.x, obstacle.y,
+                              std::to_string(index + 1), 0.08, Color::Black,
+                              marker_id, "scene_obstacle_label");
 }
 
 void SceneVisualizer::QueuePose(const scene::Pose2d& pose,

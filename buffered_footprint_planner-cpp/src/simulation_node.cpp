@@ -322,11 +322,12 @@ class SimulationNode {
 
   visualization_msgs::InteractiveMarker MakeInteractiveMarker(
       const std::string& object_id, double length, double width,
-      bool is_vehicle, bool interactive) const {
+      bool is_vehicle, bool interactive,
+      std::size_t obstacle_number = 0) const {
     visualization_msgs::InteractiveMarker marker;
     marker.header.frame_id = scenario_.frame_id();
     marker.name = object_id;
-    marker.description = object_id;
+    marker.description = is_vehicle ? object_id : std::string();
     marker.pose = InteractivePose(object_id);
     marker.scale = std::max(0.28, 1.5 * std::max(length, width));
 
@@ -355,6 +356,17 @@ class SimulationNode {
           BoxMarker(length, width, 0.0, 0.55f, 0.55f, 0.55f, 1.0f));
       visual.markers.push_back(OutlineMarker(-0.5 * length, 0.5 * length,
                                              width, 0.0f, 0.0f, 0.0f));
+      visualization_msgs::Marker number;
+      number.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+      number.pose.position.z = 0.06;
+      number.pose.orientation.w = 1.0;
+      number.scale.z = 0.08;
+      number.color.r = 0.0f;
+      number.color.g = 0.0f;
+      number.color.b = 0.0f;
+      number.color.a = 1.0f;
+      number.text = std::to_string(obstacle_number);
+      visual.markers.push_back(number);
     }
     marker.controls.push_back(visual);
 
@@ -379,10 +391,11 @@ class SimulationNode {
     if (!interactive_server_) return;
     interaction_enabled_ = interactive;
     interactive_server_->clear();
-    for (const auto& obstacle : scenario_.obstacles()) {
+    for (std::size_t i = 0; i < scenario_.obstacles().size(); ++i) {
+      const auto& obstacle = scenario_.obstacles()[i];
       interactive_server_->insert(
           MakeInteractiveMarker(obstacle.id, obstacle.length, obstacle.width,
-                                false, interactive),
+                                false, interactive, i + 1),
           [this](const visualization_msgs::InteractiveMarkerFeedbackConstPtr&
                      feedback) { HandleInteractiveFeedback(feedback); });
     }

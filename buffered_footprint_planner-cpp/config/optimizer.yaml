@@ -1,5 +1,5 @@
 min_dt: 0.01
-max_dt: 0.25
+max_dt: 0.20
 temporal_tightening_eta: 0.90
 dmin: 0.005
 total_time_limit: 35.0
