@@ -41,6 +41,6 @@ bool WriteCollisionValidation(
     const std::string& output_file, const Trajectory& trajectory,
     const VehicleParameter& vehicle,
     const std::vector<common::math::Polygon2d>& obstacles,
-    const std::array<double, 4>& bounds, std::string* error);
+    const std::array<double, 4>& bounds, double dmin, std::string* error);
 
 }  // namespace optimizer

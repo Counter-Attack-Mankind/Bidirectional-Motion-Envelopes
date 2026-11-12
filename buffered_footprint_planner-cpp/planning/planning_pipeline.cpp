@@ -123,6 +123,7 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
                0.0, "Initial guess");
   result.initial_guess_succeeded = optimizer::BuildInitialGuess(
       result.hybrid_path, configuration_.vehicle, configuration_.initial_guess,
+      snapshot.obstacle_polygons(), snapshot.bounds,
       &result.initial_guess, &result.initial_diagnostics, &error,
       &result.initial_trace);
   result.initial_guess_elapsed = SecondsSince(initial_begin);
@@ -170,7 +171,8 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
         (std::filesystem::path(result.result_directory) /
          "collision_validation.txt").string(),
         result.optimization.trajectory, configuration_.vehicle,
-        snapshot.obstacle_polygons(), snapshot.bounds, &error);
+        snapshot.obstacle_polygons(), snapshot.bounds,
+        configuration_.nlp.dmin, &error);
     if (!configuration_.nlp.save_debug_data) {
       std::filesystem::remove_all(debug_directory, filesystem_error);
     }

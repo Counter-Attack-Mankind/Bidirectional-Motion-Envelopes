@@ -71,6 +71,8 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   nlp.max_dt = initial.max_dt;
   node.param("dmin", nlp.dmin, 0.005);
   node.param("total_time_limit", nlp.total_time_limit, 35.0);
+  initial.dmin = nlp.dmin;
+  initial.total_time_limit = nlp.total_time_limit;
   node.param("ipopt_max_iterations", nlp.max_iterations, 399984);
   node.param("ipopt_max_cpu_time", nlp.max_cpu_time, 20.0);
   node.param("ipopt_tolerance", nlp.tolerance, 1e-3);
@@ -86,7 +88,10 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
       !std::isfinite(planner.hybrid_astar_timeout) ||
       planner.hybrid_astar_timeout <= 0.0 ||
       planner.delta_t <= 0.0 || initial.forward_speed <= 0.0 ||
-      initial.reverse_speed <= 0.0 || nlp.dmin <= 0.0 ||
+      initial.reverse_speed <= 0.0 || !std::isfinite(initial.min_dt) ||
+      !std::isfinite(initial.max_dt) || initial.min_dt <= 0.0 ||
+      initial.max_dt < initial.min_dt || nlp.dmin <= 0.0 ||
+      !std::isfinite(nlp.total_time_limit) || nlp.total_time_limit <= 0.0 ||
       nlp.max_cpu_time <= 0.0 ||
       !optimizer::CheckVehicleGeometryCondition(vehicle, &geometry_error)) {
     if (error) *error = geometry_error.empty() ?

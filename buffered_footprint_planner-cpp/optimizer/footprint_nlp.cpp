@@ -243,7 +243,7 @@ OptimizationResult SolveFootprintNlp(
   result.model_obca_variable_count = 10 * obca_column_count;
   result.model_variable_count = 7 * node_count + 1 + 17 * interval_count +
                                 result.model_obca_variable_count;
-  result.model_constraint_count = 44 * interval_count + 17 + 8 * node_count +
+  result.model_constraint_count = 40 * interval_count + 17 + 8 * node_count +
                                   14 * obca_column_count;
   const double front = vehicle.wheel_base + vehicle.front_hang;
   const double rear = vehicle.rear_hang;
@@ -362,14 +362,6 @@ OptimizationResult SolveFootprintNlp(
              -(rear + 0.5 * sminus(i)) * k(i) * sminus(i)));
 
     opti.subject_to(abs_k * (splus(i) + sminus(i)) <= M_PI_2);
-    opti.subject_to((1.0 + half_width * abs_k) * tan(abs_k * splus(i)) <=
-                    rear * abs_k);
-    opti.subject_to(abs_k * front * tan(abs_k * splus(i)) <=
-                    1.0 + half_width * abs_k);
-    opti.subject_to((1.0 + half_width * abs_k) * tan(abs_k * sminus(i)) <=
-                    front * abs_k);
-    opti.subject_to(abs_k * rear * tan(abs_k * sminus(i)) <=
-                    1.0 + half_width * abs_k);
 
     const MX c = cos(theta);
     const MX sn = sin(theta);
@@ -725,9 +717,9 @@ OptimizationResult SolveFootprintNlp(
                     interval, &diagnostics.dynamics_v_mps);
       RecordMaximum(std::abs(second.phy - first.phy - interval_dt * first.w),
                     interval, &diagnostics.dynamics_phi_rad);
-      const auto legacy_validity =
+      const auto envelope_validity =
           EvaluateFootprintValidity(computed_footprint, vehicle);
-      RecordMaximum(legacy_validity.max_violation(), interval,
+      RecordMaximum(PositiveViolation(envelope_validity.arc), interval,
                     &result.max_footprint_validity_violation,
                     &result.max_footprint_validity_location);
       for (std::size_t corner = 0; corner < 4; ++corner) {
@@ -815,14 +807,6 @@ OptimizationResult SolveFootprintNlp(
       const auto validity = EvaluateFootprintValidity(raw_footprint, vehicle);
       RecordMaximum(PositiveViolation(validity.arc), interval,
                     &diagnostics.ef_arc);
-      RecordMaximum(PositiveViolation(validity.forward_cond1), interval,
-                    &diagnostics.ef_forward_cond1);
-      RecordMaximum(PositiveViolation(validity.forward_cond2), interval,
-                    &diagnostics.ef_forward_cond2);
-      RecordMaximum(PositiveViolation(validity.reverse_cond1), interval,
-                    &diagnostics.ef_reverse_cond1);
-      RecordMaximum(PositiveViolation(validity.reverse_cond2), interval,
-                    &diagnostics.ef_reverse_cond2);
       for (std::size_t corner = 0; corner < 4; ++corner) {
         const double x = snapshot.corners[i][2 * corner];
         const double y = snapshot.corners[i][2 * corner + 1];
@@ -1157,10 +1141,6 @@ bool SaveNlpFailureDiagnostics(const std::string& debug_directory,
   write("max_ef_distance_equality_m", d.ef_distance_equality_m);
   write("max_ef_corner_equality_m", d.ef_corner_equality_m);
   write("max_ef_arc", d.ef_arc);
-  write("max_ef_forward_cond1", d.ef_forward_cond1);
-  write("max_ef_forward_cond2", d.ef_forward_cond2);
-  write("max_ef_reverse_cond1", d.ef_reverse_cond1);
-  write("max_ef_reverse_cond2", d.ef_reverse_cond2);
   write("max_obca_q_definition", d.obca_q_definition);
   write("max_obca_separation_m", d.obca_separation_m);
   write("max_obca_dual_equality", d.obca_dual_equality);
@@ -1230,18 +1210,22 @@ bool WriteCollisionValidation(
     const std::string& output_file, const Trajectory& trajectory,
     const VehicleParameter& vehicle,
     const std::vector<common::math::Polygon2d>& obstacles,
-    const std::array<double, 4>& bounds, std::string* error) {
+    const std::array<double, 4>& bounds, double dmin, std::string* error) {
   std::ofstream stream(output_file);
   if (!stream) {
     if (error) *error = "Cannot create collision validation report";
     return false;
   }
   constexpr double evaluation_dt = 0.01;
+  constexpr double containment_tolerance = 1e-6;
   std::size_t frames = 0;
   std::size_t collision_frames = 0;
+  std::size_t safety_distance_violation_frames = 0;
   std::size_t boundary_violation_frames = 0;
+  std::size_t bme_containment_violation_frames = 0;
   double minimum_obstacle_distance = std::numeric_limits<double>::infinity();
   double maximum_boundary_violation = 0.0;
+  double maximum_bme_containment_violation = 0.0;
   if (trajectory.nodes.size() >= 2 &&
       trajectory.intervals.size() + 1 == trajectory.nodes.size()) {
     for (std::size_t i = 0; i < trajectory.intervals.size(); ++i) {
@@ -1249,6 +1233,12 @@ bool WriteCollisionValidation(
       const std::size_t subdivisions = std::max<std::size_t>(
           1, static_cast<std::size_t>(std::ceil(dt / evaluation_dt)));
       const std::size_t first_sample = i == 0 ? 0 : 1;
+      std::vector<common::math::Vec2d> envelope_corners;
+      envelope_corners.reserve(trajectory.intervals[i].corners.size());
+      for (const auto& corner : trajectory.intervals[i].corners) {
+        envelope_corners.emplace_back(corner.x(), corner.y());
+      }
+      const common::math::Polygon2d envelope(std::move(envelope_corners));
       for (std::size_t sample = first_sample; sample <= subdivisions; ++sample) {
         const double ratio = static_cast<double>(sample) /
                              static_cast<double>(subdivisions);
@@ -1261,13 +1251,16 @@ bool WriteCollisionValidation(
         const auto box = vehicle.GenerateBox(common::math::Pose(x, y, theta));
         const common::math::Polygon2d body(box);
         bool collision = false;
+        bool safety_distance_violation = false;
         for (const auto& obstacle : obstacles) {
           const double distance = body.DistanceTo(obstacle);
           minimum_obstacle_distance = std::min(minimum_obstacle_distance,
                                                 distance);
           if (body.HasOverlap(obstacle)) collision = true;
+          if (distance + 1e-12 < dmin) safety_distance_violation = true;
         }
         bool outside = false;
+        bool outside_envelope = false;
         for (const auto& corner : box.corners()) {
           const double violation = std::max({
               0.0, bounds[0] - corner.x(), corner.x() - bounds[1],
@@ -1275,10 +1268,20 @@ bool WriteCollisionValidation(
           maximum_boundary_violation = std::max(maximum_boundary_violation,
                                                  violation);
           outside = outside || violation > 0.0;
+          if (!envelope.IsPointIn(corner) &&
+              !envelope.IsPointOnBoundary(corner)) {
+            const double containment_violation = envelope.DistanceTo(corner);
+            maximum_bme_containment_violation = std::max(
+                maximum_bme_containment_violation, containment_violation);
+            outside_envelope = outside_envelope ||
+                               containment_violation > containment_tolerance;
+          }
         }
         ++frames;
         if (collision) ++collision_frames;
+        if (safety_distance_violation) ++safety_distance_violation_frames;
         if (outside) ++boundary_violation_frames;
+        if (outside_envelope) ++bme_containment_violation_frames;
       }
     }
   }
@@ -1293,12 +1296,22 @@ bool WriteCollisionValidation(
          << "collision_frames=" << collision_frames << '\n'
          << "collision_ratio="
          << (frames ? static_cast<double>(collision_frames) / frames : 0.0) << '\n'
+         << "required_safety_distance_m=" << dmin << '\n'
+         << "safety_distance_violation_frames="
+         << safety_distance_violation_frames << '\n'
          << "minimum_obstacle_distance_available=" << !obstacles.empty() << '\n'
          << "minimum_obstacle_distance_m=" << minimum_obstacle_distance << '\n'
          << "boundary_violation_frames=" << boundary_violation_frames << '\n'
          << "maximum_boundary_violation_m=" << maximum_boundary_violation << '\n'
+         << "bme_containment_violation_frames="
+         << bme_containment_violation_frames << '\n'
+         << "bme_containment_tolerance_m=" << containment_tolerance << '\n'
+         << "maximum_bme_containment_violation_m="
+         << maximum_bme_containment_violation << '\n'
          << "passed=" << (frames > 0 && collision_frames == 0 &&
-                           boundary_violation_frames == 0) << '\n'
+                           safety_distance_violation_frames == 0 &&
+                           boundary_violation_frames == 0 &&
+                           bme_containment_violation_frames == 0) << '\n'
          << "continuous_time_safety_proof=false\n";
   return static_cast<bool>(stream);
 }

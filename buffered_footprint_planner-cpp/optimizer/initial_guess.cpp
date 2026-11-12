@@ -299,11 +299,91 @@ int IntervalDirection(const std::vector<TrajectoryNode>& dense,
   return fallback;
 }
 
+struct EnvironmentValidity {
+  bool valid = true;
+  std::size_t obstacle_index = 0;
+  double minimum_clearance = std::numeric_limits<double>::infinity();
+  double boundary_violation = 0.0;
+};
+
+EnvironmentValidity EvaluateEnvironmentValidity(
+    const FootprintInterval& footprint,
+    const std::vector<common::math::Polygon2d>& obstacles,
+    const std::array<double, 4>& bounds, double dmin) {
+  EnvironmentValidity result;
+  std::vector<common::math::Vec2d> corners;
+  corners.reserve(footprint.corners.size());
+  for (const auto& corner : footprint.corners) {
+    corners.emplace_back(corner.x(), corner.y());
+    result.boundary_violation = std::max(
+        result.boundary_violation,
+        std::max({bounds[0] - corner.x(), corner.x() - bounds[1],
+                  bounds[2] - corner.y(), corner.y() - bounds[3], 0.0}));
+  }
+  const common::math::Polygon2d envelope(std::move(corners));
+  for (std::size_t i = 0; i < obstacles.size(); ++i) {
+    const double clearance = envelope.DistanceTo(obstacles[i]);
+    if (clearance < result.minimum_clearance) {
+      result.minimum_clearance = clearance;
+      result.obstacle_index = i;
+    }
+  }
+  result.valid = result.boundary_violation <= 1e-12 &&
+                 result.minimum_clearance + 1e-12 >= dmin;
+  return result;
+}
+
+bool StructuralIntervalBound(const std::vector<TrajectoryNode>& dense,
+                             const VehicleParameter& vehicle,
+                             const InitialGuessConfig& config,
+                             std::size_t* interval_bound,
+                             std::string* error) {
+  const double distance = std::hypot(dense.back().x - dense.front().x,
+                                     dense.back().y - dense.front().y);
+  const double heading = std::abs(std::remainder(
+      dense.back().theta - dense.front().theta, 2.0 * M_PI));
+  const double kappa_max = std::tan(vehicle.delta_max) / vehicle.wheel_base;
+  const double required = std::max(distance, heading / kappa_max);
+  if (required > vehicle.v_max * config.total_time_limit + 1e-12) {
+    if (error) {
+      *error = "Endpoint displacement exceeds the speed and total-time bounds";
+    }
+    return false;
+  }
+  const std::size_t minimum = required > 1e-12 ? 3 : 1;
+  const std::size_t maximum = static_cast<std::size_t>(
+      std::floor(config.total_time_limit / config.min_dt));
+  for (std::size_t count = minimum; count <= maximum; ++count) {
+    double speed_sum = 0.0;
+    for (std::size_t i = 0; i < count; ++i) {
+      const std::size_t acceleration_steps = i > 0 ? i - 1 : 0;
+      const std::size_t braking_steps = count - i;
+      const double speed = std::min(
+          vehicle.v_max, config.max_acceleration * config.max_dt *
+                             static_cast<double>(
+                                 std::min(acceleration_steps, braking_steps)));
+      speed_sum += speed;
+    }
+    const double capacity = std::min(config.max_dt * speed_sum,
+                                     vehicle.v_max * config.total_time_limit);
+    if (capacity + 1e-12 >= required) {
+      *interval_bound = count;
+      return true;
+    }
+  }
+  if (error) {
+    *error = "No interval count meets the endpoint motion necessary conditions";
+  }
+  return false;
+}
+
 bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
                         const std::vector<double>& dense_time,
                         const std::vector<std::size_t>& mandatory,
                         const VehicleParameter& vehicle,
                         const InitialGuessConfig& config,
+                        const std::vector<common::math::Polygon2d>& obstacles,
+                        const std::array<double, 4>& bounds,
                         Trajectory* trajectory,
                         InitialGuessDiagnostics* diagnostics,
                          std::vector<std::size_t>* selected_indices,
@@ -312,12 +392,48 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
     if (error) *error = "Dense trajectory timestamps are inconsistent";
     return false;
   }
+  if (!StructuralIntervalBound(dense, vehicle, config,
+                               &diagnostics->structural_min_intervals, error)) {
+    return false;
+  }
+  const double reference_duration = dense_time.back() - dense_time.front();
+  diagnostics->maximum_available_trajectory_time =
+      std::min(reference_duration, config.total_time_limit);
+  diagnostics->reference_step_cap =
+      reference_duration /
+      static_cast<double>(diagnostics->structural_min_intervals);
+  const double maximum_step =
+      std::min(config.max_dt, diagnostics->reference_step_cap);
+  if (maximum_step + 1e-12 < config.min_dt) {
+    if (error) {
+      *error = "Structural interval cap is smaller than the minimum time step";
+    }
+    return false;
+  }
   std::vector<std::size_t> selected{0};
   std::vector<double> interval_time;
   std::size_t current = 0;
   std::size_t interval_index = 0;
   int previous_direction = dense.front().v < 0.0 ? -1 : 1;
   while (current + 1 < dense.size()) {
+    const auto retained_environment = EvaluateEnvironmentValidity(
+        ComputeEmbodiedFootprint(dense[current], 0.0, vehicle), obstacles,
+        bounds, config.dmin);
+    if (!retained_environment.valid) {
+      std::ostringstream message;
+      message << "Reference body is not environment-valid at dense index "
+              << current;
+      if (retained_environment.boundary_violation > 1e-12) {
+        message << " (map boundary violation="
+                << retained_environment.boundary_violation << ")";
+      } else {
+        message << " (obstacle=" << retained_environment.obstacle_index
+                << ", clearance=" << retained_environment.minimum_clearance
+                << " m, required=" << config.dmin << " m)";
+      }
+      if (error) *error = message.str();
+      return false;
+    }
     std::size_t boundary = dense.size() - 1;
     for (std::size_t index : mandatory) {
       if (index > current) { boundary = index; break; }
@@ -327,7 +443,7 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
          ++candidate) {
       const double dt = dense_time[candidate] - dense_time[current];
       if (dt < config.min_dt - 1e-12) continue;
-      if (dt > config.max_dt + 1e-12) break;
+      if (dt > maximum_step + 1e-12) break;
       const double remaining = dense_time[boundary] - dense_time[candidate];
       if (candidate == boundary || remaining >= config.min_dt - 1e-12) {
         candidates.push_back(candidate);
@@ -341,6 +457,7 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
       return false;
     }
     std::size_t last_valid = current;
+    EnvironmentValidity last_environment;
     for (std::size_t candidate : candidates) {
       const double dt = dense_time[candidate] - dense_time[current];
       const int direction = IntervalDirection(dense, current, candidate,
@@ -354,16 +471,35 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
                                                        vehicle);
       const auto validity = EvaluateFootprintValidity(footprint, vehicle,
                                                        config.eta);
-      if (mixed_direction || validity.max_violation() > 1e-12) {
+      const auto environment = EvaluateEnvironmentValidity(
+          footprint, obstacles, bounds, config.dmin);
+      if (mixed_direction || validity.max_violation() > 1e-12 ||
+          !environment.valid) {
+        std::string reason = mixed_direction
+                                 ? "mixed_forward_reverse"
+                                 : ViolationNames(validity);
+        double violation = validity.max_violation();
+        if (!environment.valid) {
+          if (environment.boundary_violation > 1e-12) {
+            reason = "BME_map_boundary";
+            violation = environment.boundary_violation;
+          } else {
+            reason = "BME_obstacle_clearance[" +
+                     std::to_string(environment.obstacle_index) + "]";
+            violation = std::max(0.0, config.dmin -
+                                          environment.minimum_clearance);
+            ++diagnostics->obstacle_limited_interval_count;
+          }
+        }
         diagnostics->rejected_intervals.push_back({
             interval_index, current, candidate, dt, footprint.k, footprint.s,
-            mixed_direction ? "mixed_forward_reverse" : ViolationNames(validity),
-            validity.max_violation(),
+            reason, violation,
             {{validity.arc, validity.forward_cond1, validity.forward_cond2,
               validity.reverse_cond1, validity.reverse_cond2}}});
         break;
       }
       last_valid = candidate;
+      last_environment = environment;
     }
     if (last_valid == current) {
       std::ostringstream message;
@@ -377,6 +513,12 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
     interval_time.push_back(dense_time[current] - dense_time[previous]);
     previous_direction = IntervalDirection(dense, previous, current,
                                            previous_direction);
+    diagnostics->minimum_bme_obstacle_clearance = std::min(
+        diagnostics->minimum_bme_obstacle_clearance,
+        last_environment.minimum_clearance);
+    diagnostics->max_bme_map_boundary_violation = std::max(
+        diagnostics->max_bme_map_boundary_violation,
+        last_environment.boundary_violation);
     ++interval_index;
   }
   trajectory->nodes.clear();
@@ -390,6 +532,12 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
                                               interval_time[i], vehicle);
     footprint.gear = direction > 0;
     trajectory->intervals.push_back(footprint);
+  }
+  diagnostics->actual_interval_count = interval_time.size();
+  if (diagnostics->actual_interval_count <
+      diagnostics->structural_min_intervals) {
+    if (error) *error = "Selected mesh violates the structural interval bound";
+    return false;
   }
   return true;
 }
@@ -493,6 +641,8 @@ void FinalizeInitialValues(const VehicleParameter& vehicle,
 bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
                        const VehicleParameter& vehicle,
                        const InitialGuessConfig& config,
+                       const std::vector<common::math::Polygon2d>& obstacles,
+                       const std::array<double, 4>& bounds,
                        Trajectory* trajectory,
                        InitialGuessDiagnostics* diagnostics,
                        std::string* error, InitialGuessTrace* trace) {
@@ -618,6 +768,7 @@ bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
   }
   diagnostics->dense_node_count = dense.size();
   if (!SelectTemporalMesh(dense, dense_time, mandatory, vehicle, config,
+                           obstacles, bounds,
                            trajectory, diagnostics,
                            trace ? &trace->selected_dense_indices : nullptr,
                            error)) {
@@ -673,6 +824,17 @@ bool SaveInitialGuessDiagnostics(const std::string& output_file,
          << "max_acceleration_bound_violation=" << d.max_acceleration_bound_violation << '\n'
          << "max_steering_bound_violation=" << d.max_steering_bound_violation << '\n'
          << "max_steering_rate_bound_violation=" << d.max_steering_rate_bound_violation << '\n'
+         << "structural_min_intervals=" << d.structural_min_intervals << '\n'
+         << "actual_interval_count=" << d.actual_interval_count << '\n'
+         << "reference_step_cap_s=" << d.reference_step_cap << '\n'
+         << "maximum_available_trajectory_time_s="
+         << d.maximum_available_trajectory_time << '\n'
+         << "obstacle_limited_interval_count="
+         << d.obstacle_limited_interval_count << '\n'
+         << "minimum_bme_obstacle_clearance_m="
+         << d.minimum_bme_obstacle_clearance << '\n'
+         << "max_bme_map_boundary_violation_m="
+         << d.max_bme_map_boundary_violation << '\n'
          << "nonfinite_value_count=" << d.nonfinite_value_count << '\n'
          << "direction_sign_mismatch_count=" << d.direction_sign_mismatch_count << '\n';
   for (const auto& item : d.merged_short_segments) {

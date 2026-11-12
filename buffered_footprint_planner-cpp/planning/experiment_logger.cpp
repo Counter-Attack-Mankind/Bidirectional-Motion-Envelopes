@@ -167,6 +167,20 @@ bool ExperimentLogger::WriteSummary(
       << "initial_guess_max_euler_residual=" << initial.max_euler_residual << '\n'
       << "initial_guess_max_footprint_violation="
       << initial.max_footprint_violation << '\n'
+      << "initial_guess_structural_min_intervals="
+      << initial.structural_min_intervals << '\n'
+      << "initial_guess_actual_intervals="
+      << initial.actual_interval_count << '\n'
+      << "initial_guess_reference_step_cap_s="
+      << initial.reference_step_cap << '\n'
+      << "initial_guess_maximum_available_trajectory_time_s="
+      << initial.maximum_available_trajectory_time << '\n'
+      << "initial_guess_obstacle_limited_intervals="
+      << initial.obstacle_limited_interval_count << '\n'
+      << "initial_guess_minimum_bme_obstacle_clearance_m="
+      << initial.minimum_bme_obstacle_clearance << '\n'
+      << "initial_guess_max_bme_map_boundary_violation_m="
+      << initial.max_bme_map_boundary_violation << '\n'
       << "nlp_solver_succeeded=" << nlp.solver_succeeded << '\n'
       << "nlp_validated_success=" << nlp.success << '\n'
       << "nlp_status=" << nlp.status << '\n'

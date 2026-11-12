@@ -1,9 +1,11 @@
 #pragma once
 
 #include <array>
+#include <limits>
 #include <string>
 #include <vector>
 
+#include "common/math/polygon2d.h"
 #include "hybrid_astar/hybrid_a_star.h"
 #include "hybrid_astar/vehicle_parameter.h"
 #include "optimizer/trajectory.h"
@@ -18,6 +20,8 @@ struct InitialGuessConfig {
   double reverse_speed = 0.16;
   double max_acceleration = 0.10;
   double max_steering_rate = 0.30;
+  double dmin = 0.005;
+  double total_time_limit = 35.0;
 };
 
 struct RejectedInterval {
@@ -55,6 +59,14 @@ struct InitialGuessDiagnostics {
   double max_abs_clipped_steering_rate = 0.0;
   double max_euler_residual = 0.0;
   double max_footprint_violation = 0.0;
+  std::size_t structural_min_intervals = 0;
+  std::size_t actual_interval_count = 0;
+  std::size_t obstacle_limited_interval_count = 0;
+  double reference_step_cap = 0.0;
+  double maximum_available_trajectory_time = 0.0;
+  double minimum_bme_obstacle_clearance =
+      std::numeric_limits<double>::infinity();
+  double max_bme_map_boundary_violation = 0.0;
   double endpoint_pose_error = 0.0;
   double max_velocity_bound_violation = 0.0;
   double max_acceleration_bound_violation = 0.0;
@@ -85,6 +97,8 @@ struct InitialGuessTrace {
 bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
                        const VehicleParameter& vehicle,
                        const InitialGuessConfig& config,
+                       const std::vector<common::math::Polygon2d>& obstacles,
+                       const std::array<double, 4>& bounds,
                        Trajectory* trajectory, InitialGuessDiagnostics* diagnostics,
                        std::string* error, InitialGuessTrace* trace = nullptr);
 

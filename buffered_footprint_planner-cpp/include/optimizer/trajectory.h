@@ -66,10 +66,6 @@ struct NlpConstraintDiagnostics {
   MaximumViolation ef_distance_equality_m;
   MaximumViolation ef_corner_equality_m;
   MaximumViolation ef_arc;
-  MaximumViolation ef_forward_cond1;
-  MaximumViolation ef_forward_cond2;
-  MaximumViolation ef_reverse_cond1;
-  MaximumViolation ef_reverse_cond2;
   MaximumViolation obca_q_definition;
   MaximumViolation obca_separation_m;
   MaximumViolation obca_dual_equality;
