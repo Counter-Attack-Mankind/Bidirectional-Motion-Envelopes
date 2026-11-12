@@ -37,6 +37,21 @@ void SweptAreaVisualizer::Update(
   previous_pose_ = pose;
 }
 
+void SweptAreaVisualizer::UpdateAlongTrajectory(
+    const optimizer::Trajectory& trajectory,
+    std::size_t previous_interval, std::size_t current_interval,
+    const optimizer::TrajectoryNode& current_pose) {
+  if (trajectory.nodes.empty()) return;
+  const std::size_t first_boundary = previous_interval + 1;
+  const std::size_t last_boundary = std::min(
+      current_interval, trajectory.nodes.size() - 1);
+  for (std::size_t node_index = first_boundary;
+       node_index <= last_boundary; ++node_index) {
+    Update(trajectory.nodes[node_index]);
+  }
+  Update(current_pose);
+}
+
 void SweptAreaVisualizer::Reset(
     const optimizer::TrajectoryNode& start_pose) {
   Clear();

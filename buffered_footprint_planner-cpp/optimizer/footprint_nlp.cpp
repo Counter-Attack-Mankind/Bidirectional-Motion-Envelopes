@@ -625,7 +625,6 @@ OptimizationResult SolveFootprintNlp(
       const double interval_dt = static_cast<double>(dt_value(i));
       auto footprint = ComputeEmbodiedFootprint(
           snapshot->trajectory.nodes[i], interval_dt, vehicle);
-      footprint.gear = initial.intervals[i].gear;
       snapshot->trajectory.intervals[i] = footprint;
       snapshot->k[i] = static_cast<double>(k_value(i));
       snapshot->s[i] = static_cast<double>(s_value(i));

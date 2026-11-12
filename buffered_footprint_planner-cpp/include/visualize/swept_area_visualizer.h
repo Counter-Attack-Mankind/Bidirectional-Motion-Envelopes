@@ -18,6 +18,10 @@ class SweptAreaVisualizer {
   bool Initialize(const VehicleParameter& vehicle, double resolution,
                   std::string* error);
   void Update(const optimizer::TrajectoryNode& pose);
+  void UpdateAlongTrajectory(const optimizer::Trajectory& trajectory,
+                             std::size_t previous_interval,
+                             std::size_t current_interval,
+                             const optimizer::TrajectoryNode& current_pose);
   void Reset(const optimizer::TrajectoryNode& start_pose);
   void Clear();
   void QueueDirtyMarkers();

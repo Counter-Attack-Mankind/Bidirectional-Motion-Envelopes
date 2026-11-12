@@ -1,7 +1,7 @@
 min_dt: 0.01
 max_dt: 0.20
 temporal_tightening_eta: 0.90
-dmin: 0.005
+dmin: 0.010
 total_time_limit: 35.0
 ipopt_max_iterations: 399984
 ipopt_max_cpu_time: 20.0

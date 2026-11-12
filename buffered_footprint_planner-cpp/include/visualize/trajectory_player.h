@@ -27,7 +27,8 @@ class TrajectoryPlayer {
   using StateCallback = std::function<void(const PlaybackState&)>;
 
   bool Start(ros::NodeHandle& node, const optimizer::Trajectory& trajectory,
-             double playback_speed, StateCallback callback,
+             double playback_speed, double playback_frequency_hz,
+             StateCallback callback,
              std::string* error);
   void Stop();
   bool active() const { return active_; }
@@ -43,6 +44,7 @@ class TrajectoryPlayer {
   ros::Timer timer_;
   ros::Time last_tick_;
   double playback_speed_ = 1.0;
+  double playback_frequency_hz_ = 100.0;
   double trajectory_time_ = 0.0;
   double pause_elapsed_ = 0.0;
   bool paused_at_end_ = false;

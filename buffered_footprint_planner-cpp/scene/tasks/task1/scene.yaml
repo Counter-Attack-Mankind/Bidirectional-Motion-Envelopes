@@ -1,4 +1,4 @@
-task_id: 0
+task_id: 1
 frame_id: map
 map:
   x_min: 0

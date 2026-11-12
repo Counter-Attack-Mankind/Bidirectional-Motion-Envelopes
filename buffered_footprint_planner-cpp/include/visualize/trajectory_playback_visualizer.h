@@ -20,6 +20,7 @@ class TrajectoryPlaybackVisualizer {
  public:
   bool Initialize(ros::NodeHandle& node, SceneVisualizer* scene_visualizer,
                   const VehicleParameter& vehicle, double playback_speed,
+                  double playback_frequency_hz,
                   double swept_area_resolution, std::string* error);
   bool Start(const optimizer::Trajectory& trajectory, std::string* error);
   void StopAndClear();
@@ -27,6 +28,7 @@ class TrajectoryPlaybackVisualizer {
 
  private:
   void OnPlaybackState(const PlaybackState& state);
+  void UpdateSweptArea(const PlaybackState& state);
 
   ros::NodeHandle* node_ = nullptr;
   SceneVisualizer* scene_visualizer_ = nullptr;
@@ -36,8 +38,11 @@ class TrajectoryPlaybackVisualizer {
   FootprintVisualizer footprint_visualizer_;
   SweptAreaVisualizer swept_area_visualizer_;
   double playback_speed_ = 1.0;
+  double playback_frequency_hz_ = 100.0;
   double swept_area_resolution_ = 0.005;
   std::size_t completed_cycles_ = 0;
+  PlaybackState previous_state_;
+  bool has_previous_state_ = false;
   bool initialized_ = false;
 };
 

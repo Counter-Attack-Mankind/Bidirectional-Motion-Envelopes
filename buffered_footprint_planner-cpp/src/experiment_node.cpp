@@ -270,14 +270,18 @@ int main(int argc, char** argv) {
   }
 
   double playback_speed = 1.0;
+  double playback_frequency_hz = 100.0;
   double swept_area_resolution = 0.005;
   private_node.param("visualization/playback_speed", playback_speed, 1.0);
+  private_node.param("visualization/playback_frequency_hz",
+                     playback_frequency_hz, 100.0);
   private_node.param("visualization/swept_area_resolution",
                      swept_area_resolution, 0.005);
   visualization::TrajectoryPlaybackVisualizer playback;
   bool playback_started = false;
   if (!playback.Initialize(private_node, &visualizer, configuration.vehicle,
-                           playback_speed, swept_area_resolution, &error)) {
+                           playback_speed, playback_frequency_hz,
+                           swept_area_resolution, &error)) {
     ROS_ERROR("Cannot initialize trajectory visualization: %s", error.c_str());
   } else if (result.success) {
     playback_started = playback.Start(result.optimization.trajectory, &error);

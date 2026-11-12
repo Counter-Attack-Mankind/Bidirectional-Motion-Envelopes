@@ -24,11 +24,18 @@ double Interpolate(double first, double second, double ratio) {
 
 bool TrajectoryPlayer::Start(ros::NodeHandle& node,
                              const optimizer::Trajectory& trajectory,
-                             double playback_speed, StateCallback callback,
+                             double playback_speed,
+                             double playback_frequency_hz,
+                             StateCallback callback,
                              std::string* error) {
   Stop();
   if (!std::isfinite(playback_speed) || playback_speed <= 0.0) {
     if (error) *error = "Playback speed must be finite and positive";
+    return false;
+  }
+  if (!std::isfinite(playback_frequency_hz) ||
+      playback_frequency_hz <= 0.0) {
+    if (error) *error = "Playback frequency must be finite and positive";
     return false;
   }
   if (!callback) {
@@ -38,13 +45,14 @@ bool TrajectoryPlayer::Start(ros::NodeHandle& node,
   trajectory_ = trajectory;
   if (!ValidateAndBuildTimeline(error)) return false;
   playback_speed_ = playback_speed;
+  playback_frequency_hz_ = playback_frequency_hz;
   callback_ = std::move(callback);
   trajectory_time_ = 0.0;
   pause_elapsed_ = 0.0;
   paused_at_end_ = false;
   last_tick_ = ros::Time();
   active_ = true;
-  timer_ = node.createTimer(ros::Duration(0.1),
+  timer_ = node.createTimer(ros::Duration(1.0 / playback_frequency_hz_),
                             &TrajectoryPlayer::OnTimer, this);
   return true;
 }
