@@ -12,7 +12,6 @@ int main() {
   ParkingPlannerConfig config;
   config.xy_bounds = {0.0, 1.5, 0.0, 1.5};
   config.xy_grid_resolution = 0.02;
-  config.grid_a_star_xy_resolution = 0.03;
   config.phi_grid_resolution = 0.05;
   config.step_size = 0.03;
   planning::ReedShepp rs(vehicle, config);
@@ -28,6 +27,8 @@ int main() {
   planning::HybridAStar planner(config, vehicle, {});
   planning::HybridAStartResult forward;
   assert(planner.Plan(0.45, 0.75, 0.0, 1.05, 0.75, 0.0, &forward));
+  assert(planner.statistics().heuristic_call_count >= 1);
+  assert(planner.statistics().expanded_node_count >= 1);
   assert(forward.x.size() == forward.gear.size());
   for (size_t i = 0; i + 1 < forward.gear.size(); ++i) {
     assert(forward.gear[i]);
@@ -60,4 +61,18 @@ int main() {
 
   planning::HybridAStartResult outside;
   assert(!planner.Plan(0.02, 0.75, 0.0, 1.0, 0.75, 0.0, &outside));
+
+  const common::math::Box2d nearby_box(
+      common::math::Vec2d(0.8235, 0.8765), 0.0, 0.10, 0.05);
+  const common::math::Polygon2d nearby_obstacle(nearby_box);
+  const common::math::Polygon2d start_body(vehicle.GenerateBox(
+      common::math::Pose(0.75, 0.75, 0.0)));
+  assert(!start_body.HasOverlap(nearby_obstacle));
+  assert(start_body.DistanceTo(nearby_obstacle) < config.search_clearance);
+  planning::HybridAStar clearance_planner(
+      config, vehicle, {nearby_obstacle});
+  planning::HybridAStartResult clearance_rejected;
+  assert(!clearance_planner.Plan(0.75, 0.75, 0.0,
+                                1.20, 0.75, 0.0,
+                                &clearance_rejected));
 }

@@ -23,9 +23,9 @@ traj_back_penalty: 1.5
 traj_gear_switch_penalty: 10.0
 traj_steer_penalty: 1.0
 traj_steer_change_penalty: 5.0
-grid_a_star_xy_resolution: 0.03
 delta_t: 0.5
 analytic_expansion_cost: 20.0
 dubins_phi_gamma: 1.1
 explore_node_num: 2000000
 hybrid_astar_timeout: 2.0
+search_clearance: 0.012

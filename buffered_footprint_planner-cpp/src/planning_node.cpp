@@ -23,7 +23,6 @@ namespace {
 
 const char* StageName(planning_platform::PlanningStage stage) {
   switch (stage) {
-    case planning_platform::PlanningStage::kDpMap: return "DP Map";
     case planning_platform::PlanningStage::kHybridAStar: return "Hybrid A*";
     case planning_platform::PlanningStage::kInitialGuess: return "Initial guess";
     case planning_platform::PlanningStage::kNlpOptimization:

@@ -122,25 +122,6 @@ void SceneVisualizer::QueueHybridPath(
 
 void SceneVisualizer::QueueHybridSearch(
     const planning::HybridSearchProgress& progress) const {
-  if (progress.stage == planning::HybridSearchStage::kBuildingDpMap) {
-    VisualizationPlot::ClearMarkers("hybrid_search_expanded", 0, 0);
-    VisualizationPlot::ClearMarkers("hybrid_search_backtrack", 0, 0);
-    VisualizationPlot::ClearMarkers("hybrid_search_current", 0, 0);
-    const double cell_size = std::max(0.001,
-                                      progress.dp_grid_resolution * 0.82);
-    VisualizationPlot::PlotGridCells(
-        progress.dp_settled_x, progress.dp_settled_y, cell_size,
-        Color::fromRGB(0.55f, 0.82f, 1.0f), 0, "dp_map_settled",
-        0.018, 0.012);
-    VisualizationPlot::PlotGridCells(
-        progress.dp_wavefront_x, progress.dp_wavefront_y, cell_size,
-        Color::fromRGB(0.05f, 0.22f, 0.75f), 0, "dp_map_wavefront",
-        0.025, 0.018);
-
-    return;
-  }
-
-  ClearDpSearch();
   if (!progress.expanded_x.empty()) {
     VisualizationPlot::PlotPoints(
         progress.expanded_x, progress.expanded_y,
@@ -247,17 +228,10 @@ void SceneVisualizer::ClearPlanningResults() const {
 }
 
 void SceneVisualizer::ClearHybridSearch() const {
-  ClearDpSearch();
   VisualizationPlot::ClearMarkers("hybrid_search_expanded", 0, 0);
   VisualizationPlot::ClearMarkers("hybrid_search_backtrack", 0, 0);
   VisualizationPlot::ClearMarkers("hybrid_search_current", 0, 0);
   VisualizationPlot::ClearMarkers("hybrid_search_status", 0, 0);
-}
-
-void SceneVisualizer::ClearDpSearch() const {
-  VisualizationPlot::ClearMarkers("dp_map_settled", 0, 0);
-  VisualizationPlot::ClearMarkers("dp_map_wavefront", 0, 0);
-  VisualizationPlot::ClearMarkers("dp_map_status", 0, 0);
 }
 
 void SceneVisualizer::ClearTrajectoryPlayback() const {

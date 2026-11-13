@@ -97,12 +97,12 @@ bool ExperimentLogger::WriteEffectiveParameters(
       << "  traj_gear_switch_penalty: " << c.planner.traj_gear_switch_penalty << '\n'
       << "  traj_steer_penalty: " << c.planner.traj_steer_penalty << '\n'
       << "  traj_steer_change_penalty: " << c.planner.traj_steer_change_penalty << '\n'
-      << "  grid_a_star_xy_resolution: " << c.planner.grid_a_star_xy_resolution << '\n'
       << "  delta_t: " << c.planner.delta_t << '\n'
       << "  analytic_expansion_cost: " << c.planner.analytic_expansion_cost << '\n'
       << "  dubins_phi_gamma: " << c.planner.dubins_phi_gamma << '\n'
       << "  explore_node_num: " << c.planner.explore_node_num << '\n'
       << "  hybrid_astar_timeout: " << c.planner.hybrid_astar_timeout << '\n'
+      << "  search_clearance: " << c.planner.search_clearance << '\n'
       << "initial_guess:\n"
       << "  min_dt: " << c.initial_guess.min_dt << '\n'
       << "  max_dt: " << c.initial_guess.max_dt << '\n'
@@ -155,6 +155,14 @@ bool ExperimentLogger::WriteSummary(
       << "hybrid_astar_succeeded=" << result.hybrid_succeeded << '\n'
       << "hybrid_astar_timed_out=" << result.hybrid_timed_out << '\n'
       << "hybrid_astar_time_s=" << result.hybrid_elapsed << '\n'
+      << "hybrid_astar_heuristic_time_s="
+      << result.hybrid_statistics.heuristic_elapsed_seconds << '\n'
+      << "hybrid_astar_heuristic_calls="
+      << result.hybrid_statistics.heuristic_call_count << '\n'
+      << "hybrid_astar_expanded_nodes="
+      << result.hybrid_statistics.expanded_node_count << '\n'
+      << "hybrid_astar_minimum_path_clearance_m="
+      << result.hybrid_statistics.minimum_path_clearance << '\n'
       << "hybrid_astar_points=" << result.hybrid_path.x.size() << '\n'
       << "hybrid_astar_path_length_m=" << path_length << '\n'
       << "initial_guess_succeeded=" << result.initial_guess_succeeded << '\n'
@@ -177,6 +185,10 @@ bool ExperimentLogger::WriteSummary(
       << initial.maximum_available_trajectory_time << '\n'
       << "initial_guess_obstacle_limited_intervals="
       << initial.obstacle_limited_interval_count << '\n'
+      << "initial_guess_environment_fallback_intervals="
+      << initial.environment_fallback_interval_count << '\n'
+      << "initial_guess_max_environment_fallback_violation="
+      << initial.max_environment_fallback_violation << '\n'
       << "initial_guess_minimum_bme_obstacle_clearance_m="
       << initial.minimum_bme_obstacle_clearance << '\n'
       << "initial_guess_max_bme_map_boundary_violation_m="
@@ -221,6 +233,20 @@ bool ExperimentLogger::WriteSummary(
       << "nlp_last_iterate_available=" << nlp.last_iterate_available << '\n'
       << "run_success=" << result.success << '\n'
       << "run_status=" << result.status << '\n';
+  for (std::size_t i = 0;
+       i < initial.environment_fallback_intervals.size(); ++i) {
+    const auto& fallback = initial.environment_fallback_intervals[i];
+    out << "initial_guess_environment_fallback_" << i
+        << "=interval:" << fallback.interval_index
+        << ",dense_start:" << fallback.dense_start
+        << ",dense_end:" << fallback.dense_end
+        << ",dt_s:" << fallback.dt
+        << ",condition:" << fallback.violated_condition
+        << ",violation:" << fallback.violation
+        << ",obstacle_clearance_m:" << fallback.obstacle_clearance
+        << ",map_boundary_violation_m:"
+        << fallback.map_boundary_violation << '\n';
+  }
   return static_cast<bool>(out);
 }
 

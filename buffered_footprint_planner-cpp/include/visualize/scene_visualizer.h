@@ -46,7 +46,6 @@ class SceneVisualizer {
 
   void ClearPlanningResults() const;
   void ClearHybridSearch() const;
-  void ClearDpSearch() const;
   void ClearTrajectoryPlayback() const;
   void Trigger() const;
 

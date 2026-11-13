@@ -63,11 +63,13 @@ HybridAStar::HybridAStar(const ParkingPlannerConfig &config,
   XYbounds_ = config.xy_bounds;
   reed_shepp_generator_ = std::unique_ptr<ReedShepp>(
       new ReedShepp(vehicle_param_, planner_open_space_config_));
-  grid_a_star_heuristic_generator_ = std::unique_ptr<GridSearch>(new GridSearch(config, obstacles));
   next_node_num_ =
       planner_open_space_config_.next_node_num;
   max_steer_angle_ =
       vehicle_param_.delta_max / vehicle_param_.steer_ratio;
+  maximum_curvature_ =
+      std::tan(max_steer_angle_) / vehicle_param_.wheel_base;
+  search_clearance_ = planner_open_space_config_.search_clearance;
   step_size_ = planner_open_space_config_.step_size;
   xy_grid_resolution_ =
       planner_open_space_config_.xy_grid_resolution;
@@ -113,22 +115,6 @@ void HybridAStar::PublishProgress(
     std::reverse(progress.backtrack_x.begin(), progress.backtrack_x.end());
     std::reverse(progress.backtrack_y.begin(), progress.backtrack_y.end());
   }
-  progress_callback_(std::move(progress));
-}
-
-void HybridAStar::PublishDpProgress(
-    const GridSearchProgress& grid_progress, HybridSearchStatus status) {
-  if (!progress_callback_) return;
-  HybridSearchProgress progress;
-  progress.stage = HybridSearchStage::kBuildingDpMap;
-  progress.dp_settled_x = grid_progress.settled_x;
-  progress.dp_settled_y = grid_progress.settled_y;
-  progress.dp_wavefront_x = grid_progress.wavefront_x;
-  progress.dp_wavefront_y = grid_progress.wavefront_y;
-  progress.dp_grid_resolution = grid_progress.resolution;
-  progress.dp_statistics = grid_progress.statistics;
-  progress.elapsed_seconds = elapsed_seconds();
-  progress.status = status;
   progress_callback_(std::move(progress));
 }
 
@@ -195,7 +181,7 @@ bool HybridAStar::ValidityCheck(const std::shared_ptr<Node3d>& node) {
     }
     common::math::Polygon2d vehicle_polygon(vehicle_box);
     for (const auto &ob : obstacles_) {
-      if (vehicle_polygon.HasOverlap(ob)) {
+      if (vehicle_polygon.DistanceTo(ob) + 1e-12 < search_clearance_) {
         return false;
       }
     }
@@ -284,9 +270,7 @@ void HybridAStar::CalculateNodeCost(const std::shared_ptr<Node3d>& current_node,
   next_node->SetTrajCost(current_node->GetTrajCost() +
                          TrajCost(current_node, next_node));
   // evaluate heuristic cost
-  double optimal_path_cost = 0.0;
-  optimal_path_cost += HoloObstacleHeuristic(next_node);
-  next_node->SetHeuCost(optimal_path_cost);
+  next_node->SetHeuCost(DistanceHeadingHeuristic(next_node));
 }
 
 double HybridAStar::TrajCost(const std::shared_ptr<Node3d>& current_node,
@@ -309,9 +293,32 @@ double HybridAStar::TrajCost(const std::shared_ptr<Node3d>& current_node,
   return piecewise_cost;
 }
 
-double HybridAStar::HoloObstacleHeuristic(const std::shared_ptr<Node3d>& next_node) {
-  return grid_a_star_heuristic_generator_->CheckDpMap(next_node->GetX(),
-                                                      next_node->GetY());
+double HybridAStar::DistanceHeadingHeuristic(
+    const std::shared_ptr<Node3d>& next_node) {
+  const auto begin = std::chrono::steady_clock::now();
+  const double distance = std::hypot(next_node->GetX() - end_node_->GetX(),
+                                     next_node->GetY() - end_node_->GetY());
+  const double heading = std::abs(common::math::NormalizeAngle(
+      next_node->GetPhi() - end_node_->GetPhi()));
+  const double value = std::max(distance, heading / maximum_curvature_);
+  statistics_.heuristic_elapsed_seconds +=
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - begin)
+          .count();
+  ++statistics_.heuristic_call_count;
+  return value;
+}
+
+double HybridAStar::CalculatePathMinimumClearance(
+    const HybridAStartResult& result) const {
+  double minimum = std::numeric_limits<double>::infinity();
+  for (std::size_t i = 0; i < result.x.size(); ++i) {
+    const common::math::Polygon2d body(vehicle_param_.GenerateBox(
+        common::math::Pose(result.x[i], result.y[i], result.phi[i])));
+    for (const auto& obstacle : obstacles_) {
+      minimum = std::min(minimum, body.DistanceTo(obstacle));
+    }
+  }
+  return minimum;
 }
 
 bool HybridAStar::GetResult(HybridAStartResult* result) {
@@ -542,6 +549,7 @@ bool HybridAStar::Plan(
   expanded_visualization_x_.clear();
   expanded_visualization_y_.clear();
   expanded_node_count_ = 0;
+  statistics_ = HybridAStarStatistics{};
   open_set_.clear();
   close_set_.clear();
   open_pq_ = decltype(open_pq_)();
@@ -557,68 +565,29 @@ bool HybridAStar::Plan(
   end_node_.reset(
       new Node3d(ex, ey, ephi, XYbounds_, planner_open_space_config_));
   if (!ValidityCheck(start_node_)) {
-    printf("start_node in collision with obstacles");
-    PublishProgress(start_node_, HybridSearchStatus::kFailed, true);
+    printf(timed_out_ ? "Hybrid A* timed out while checking start node\n"
+                      : "start_node violates bounds or search clearance\n");
+    PublishProgress(start_node_,
+                    timed_out_ ? HybridSearchStatus::kTimedOut
+                               : HybridSearchStatus::kFailed,
+                    true);
     HybridAStarLogger::Finalize();
     return false;
   }
   if (!ValidityCheck(end_node_)) {
-    printf("end_node in collision with obstacles");
-    PublishProgress(start_node_, HybridSearchStatus::kFailed, true);
+    printf(timed_out_ ? "Hybrid A* timed out while checking goal node\n"
+                      : "end_node violates bounds or search clearance\n");
+    PublishProgress(start_node_,
+                    timed_out_ ? HybridSearchStatus::kTimedOut
+                               : HybridSearchStatus::kFailed,
+                    true);
     HybridAStarLogger::Finalize();
     return false;
   }
-  GridSearch::ProgressCallback dp_progress;
-  if (progress_callback_) {
-    dp_progress = [this](GridSearchProgress progress) {
-      PublishDpProgress(progress, HybridSearchStatus::kSearching);
-    };
-  }
-  if (!grid_a_star_heuristic_generator_->GenerateDpMap(
-          ex, ey, XYbounds_, [this]() { return StopRequested(); },
-          std::move(dp_progress))) {
-    const auto dp_snapshot =
-        grid_a_star_heuristic_generator_->progress_snapshot();
-    if (timed_out_) {
-      printf("Hybrid A* timeout after %.3f s (limit %.3f s) while building "
-             "DP map: grid=%zu settled=%zu enqueued=%zu queue=%zu "
-             "peak=%zu obstacle_checks=%zu\n",
-             elapsed_seconds(), planner_open_space_config_.hybrid_astar_timeout,
-             dp_snapshot.statistics.total_grid_cells,
-             dp_snapshot.statistics.settled_cells,
-             dp_snapshot.statistics.enqueue_count,
-             dp_snapshot.statistics.queue_size,
-             dp_snapshot.statistics.queue_peak,
-             dp_snapshot.statistics.obstacle_checks);
-    }
-    PublishDpProgress(dp_snapshot,
-                      timed_out_ ? HybridSearchStatus::kTimedOut :
-                      (cancelled_ ? HybridSearchStatus::kCancelled :
-                                    HybridSearchStatus::kFailed));
-    HybridAStarLogger::Finalize();
-    return false;
-  }
-
-  // DEBUG: check if DP map reaches start
-  double start_dp_cost = grid_a_star_heuristic_generator_->CheckDpMap(sx, sy);
-  const auto& dp_stats = grid_a_star_heuristic_generator_->statistics();
-  printf("Hybrid A* DP map completed in %.3f s: grid=%zu settled=%zu "
-         "enqueued=%zu peak=%zu obstacle_checks=%zu; start heuristic=%.4f\n",
-         dp_stats.elapsed_seconds, dp_stats.total_grid_cells,
-         dp_stats.settled_cells, dp_stats.enqueue_count, dp_stats.queue_peak,
-         dp_stats.obstacle_checks, start_dp_cost);
-  if (std::isinf(start_dp_cost)) {
-    printf("Hybrid A* DP map completed but start is unreachable from goal.\n");
-    printf("  Bounds: x=[%.2f, %.2f], y=[%.2f, %.2f]\n",
-           XYbounds_[0], XYbounds_[1], XYbounds_[2], XYbounds_[3]);
-    printf("  Start: (%.3f, %.3f, %.3f), Goal: (%.3f, %.3f, %.3f)\n",
-           sx, sy, sphi, ex, ey, ephi);
-  }
-
-  // Switch the shared visualization stream from the 2D DP phase to Hybrid A*.
   PublishProgress(start_node_, HybridSearchStatus::kSearching, true);
 
   // load open set, pq
+  start_node_->SetHeuCost(DistanceHeadingHeuristic(start_node_));
   open_set_.emplace(start_node_->GetIndex(), start_node_);
   open_pq_.emplace(start_node_->GetIndex(), start_node_->GetCost());
 
@@ -644,6 +613,7 @@ bool HybridAStar::Plan(
 
     last_expanded = current_node;
     ++expanded_node_count_;
+    statistics_.expanded_node_count = expanded_node_count_;
     if (expanded_visualization_x_.size() < kMaxVisualizedExpandedNodes) {
       expanded_visualization_x_.push_back(current_node->GetX());
       expanded_visualization_y_.push_back(current_node->GetY());
@@ -700,9 +670,12 @@ bool HybridAStar::Plan(
     }
   }
   if (final_node_ == nullptr) {
-    printf("Hybrid A* search %s after %.3f s; expanded=%zu\n",
+    printf("Hybrid A* search %s after %.3f s; expanded=%zu; "
+           "heuristic_calls=%zu; heuristic_time=%.6f s\n",
            timed_out_ ? "timed out" : (cancelled_ ? "cancelled" : "failed"),
-           elapsed_seconds(), expanded_node_count_);
+           elapsed_seconds(), expanded_node_count_,
+           statistics_.heuristic_call_count,
+           statistics_.heuristic_elapsed_seconds);
     PublishProgress(last_expanded, timed_out_ ? HybridSearchStatus::kTimedOut :
                     (cancelled_ ? HybridSearchStatus::kCancelled :
                                   HybridSearchStatus::kFailed), true);
@@ -732,10 +705,15 @@ bool HybridAStar::Plan(
     double dy = result->y[i] - result->y[i-1];
     path_length += std::sqrt(dx * dx + dy * dy);
   }
+  statistics_.minimum_path_clearance = CalculatePathMinimumClearance(*result);
 
   printf("Hybrid A* search succeeded in %.3f s; expanded=%zu; points=%zu; "
-         "length=%.2f m\n", elapsed_seconds(), expanded_node_count_,
-         result->x.size(), path_length);
+         "length=%.2f m; heuristic_calls=%zu; heuristic_time=%.6f s; "
+         "minimum_clearance=%.4f m\n", elapsed_seconds(),
+         expanded_node_count_, result->x.size(), path_length,
+         statistics_.heuristic_call_count,
+         statistics_.heuristic_elapsed_seconds,
+         statistics_.minimum_path_clearance);
   PublishProgress(last_expanded, HybridSearchStatus::kSucceeded, true);
 
   HybridAStarLogger::Finalize();

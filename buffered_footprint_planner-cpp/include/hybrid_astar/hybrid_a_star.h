@@ -30,9 +30,9 @@
 #include <vector>
 #include <array>
 #include <functional>
+#include <limits>
 
 #include "common/math/math_utils.h"
-#include "hybrid_astar/grid_search.h"
 #include "hybrid_astar/node3d.h"
 #include "hybrid_astar/reeds_shepp_path.h"
 #include "hybrid_astar/vehicle_parameter.h"
@@ -59,15 +59,9 @@ enum class HybridSearchStatus {
   kCancelled,
 };
 
-enum class HybridSearchStage {
-  kBuildingDpMap,
-  kHybridSearch,
-};
-
 // Bounded, presentation-only snapshot. It never participates in search costs
 // or node ordering.
 struct HybridSearchProgress {
-  HybridSearchStage stage = HybridSearchStage::kHybridSearch;
   std::vector<double> expanded_x;
   std::vector<double> expanded_y;
   std::vector<double> backtrack_x;
@@ -77,14 +71,15 @@ struct HybridSearchProgress {
   double current_phi = 0.0;
   double elapsed_seconds = 0.0;
   std::size_t expanded_count = 0;
-  std::vector<double> dp_settled_x;
-  std::vector<double> dp_settled_y;
-  std::vector<double> dp_wavefront_x;
-  std::vector<double> dp_wavefront_y;
-  double dp_grid_resolution = 0.0;
-  GridSearchStatistics dp_statistics;
   bool has_current = false;
   HybridSearchStatus status = HybridSearchStatus::kSearching;
+};
+
+struct HybridAStarStatistics {
+  double heuristic_elapsed_seconds = 0.0;
+  std::size_t heuristic_call_count = 0;
+  std::size_t expanded_node_count = 0;
+  double minimum_path_clearance = std::numeric_limits<double>::infinity();
 };
 
 class HybridAStar {
@@ -106,6 +101,7 @@ public:
     return planner_open_space_config_.hybrid_astar_timeout;
   }
   double elapsed_seconds() const;
+  const HybridAStarStatistics& statistics() const { return statistics_; }
   bool TrajectoryPartition(const HybridAStartResult& result,
                            std::vector<HybridAStartResult>* partitioned_result);
 
@@ -125,7 +121,8 @@ private:
                          const std::shared_ptr<Node3d>& next_node);
   double TrajCost(const std::shared_ptr<Node3d>& current_node,
                   const std::shared_ptr<Node3d>& next_node);
-  double HoloObstacleHeuristic(const std::shared_ptr<Node3d>& next_node);
+  double DistanceHeadingHeuristic(const std::shared_ptr<Node3d>& next_node);
+  double CalculatePathMinimumClearance(const HybridAStartResult& result) const;
   bool GetResult(HybridAStartResult* result);
   bool GetTemporalProfile(HybridAStartResult* result);
   bool GenerateSpeedAcceleration(HybridAStartResult* result);
@@ -133,14 +130,14 @@ private:
   bool StopRequested();
   void PublishProgress(const std::shared_ptr<Node3d>& current_node,
                        HybridSearchStatus status, bool force);
-  void PublishDpProgress(const GridSearchProgress& grid_progress,
-                         HybridSearchStatus status);
 
 private:
   ParkingPlannerConfig planner_open_space_config_;
   VehicleParameter vehicle_param_;
   size_t next_node_num_ = 0;
   double max_steer_angle_ = 0.0;
+  double maximum_curvature_ = 0.0;
+  double search_clearance_ = 0.0;
   double step_size_ = 0.0;
   double xy_grid_resolution_ = 0.0;
   double delta_t_ = 0.0;
@@ -172,7 +169,6 @@ private:
   std::unordered_map<int64_t, std::shared_ptr<Node3d>> open_set_;
   std::unordered_map<int64_t, std::shared_ptr<Node3d>> close_set_;
   std::unique_ptr<ReedShepp> reed_shepp_generator_;
-  std::unique_ptr<GridSearch> grid_a_star_heuristic_generator_;
   std::chrono::steady_clock::time_point search_begin_;
   std::chrono::steady_clock::time_point search_deadline_;
   bool timed_out_ = false;
@@ -184,6 +180,7 @@ private:
   std::vector<double> expanded_visualization_x_;
   std::vector<double> expanded_visualization_y_;
   std::size_t expanded_node_count_ = 0;
+  HybridAStarStatistics statistics_;
   static constexpr double kProgressPeriodSeconds = 0.15;
   static constexpr std::size_t kMaxVisualizedExpandedNodes = 10000;
   static constexpr std::size_t kMaxBacktrackNodes = 1000;

@@ -63,7 +63,6 @@ add_library(common_util
 target_link_libraries(common_util common_math ${catkin_LIBRARIES})
 
 add_library(hybrid_astar
-  hybrid_astar/grid_search.cc
   hybrid_astar/hybrid_a_star.cc
   hybrid_astar/node3d.cc
   hybrid_astar/reeds_shepp_path.cc

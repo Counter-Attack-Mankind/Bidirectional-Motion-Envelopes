@@ -16,13 +16,13 @@ struct ParkingPlannerConfig {
   double traj_steer_change_penalty = 5.0;
 
   // 2D A*启发式
-  double grid_a_star_xy_resolution = 0.05;
 
   double delta_t = 0.5;
   double analytic_expansion_cost = 20.0;
   double dubins_phi_gamma = 1.1;
   size_t explore_node_num = 2000000;
   double hybrid_astar_timeout = 8.0;
+  double search_clearance = 0.012;
 
   std::array<double, 4> xy_bounds{};
 };

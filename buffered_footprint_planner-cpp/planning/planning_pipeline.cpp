@@ -64,23 +64,11 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
                                 snapshot.obstacle_polygons(),
                                 configuration_.nlp.save_debug_data);
   const auto hybrid_begin = std::chrono::steady_clock::now();
-  bool hybrid_stage_started = false;
-  double hybrid_stage_begin_elapsed = 0.0;
-  planning::HybridSearchStage last_search_stage =
-      planning::HybridSearchStage::kBuildingDpMap;
-  notify_stage(PlanningStage::kDpMap, PlanningStageState::kRunning, 0.0,
-               "DP Map");
+  notify_stage(PlanningStage::kHybridAStar, PlanningStageState::kRunning, 0.0,
+               "Hybrid A*");
   auto progress_forwarder =
       [&, hybrid_progress = std::move(hybrid_progress)](
           planning::HybridSearchProgress progress) mutable {
-        last_search_stage = progress.stage;
-        if (progress.stage == planning::HybridSearchStage::kHybridSearch &&
-            !hybrid_stage_started) {
-          hybrid_stage_started = true;
-          hybrid_stage_begin_elapsed = progress.elapsed_seconds;
-          notify_stage(PlanningStage::kHybridAStar,
-                       PlanningStageState::kRunning, 0.0, "Hybrid A*");
-        }
         if (hybrid_progress) hybrid_progress(std::move(progress));
       };
   result.hybrid_succeeded = planner.Plan(
@@ -89,6 +77,7 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
       &result.hybrid_path, std::move(progress_forwarder),
       std::move(cancellation));
   result.hybrid_elapsed = SecondsSince(hybrid_begin);
+  result.hybrid_statistics = planner.statistics();
   result.hybrid_timed_out = planner.timed_out();
   if (!result.hybrid_succeeded) {
     result.status = result.hybrid_timed_out
@@ -96,16 +85,8 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
               " s (" + std::to_string(planner.timeout_seconds()) +
               " s limit)"
         : "Hybrid A* failed";
-    const PlanningStage failed_stage =
-        last_search_stage == planning::HybridSearchStage::kBuildingDpMap
-            ? PlanningStage::kDpMap
-            : PlanningStage::kHybridAStar;
-    notify_stage(failed_stage, PlanningStageState::kFailed,
-                 failed_stage == PlanningStage::kHybridAStar
-                     ? std::max(0.0, result.hybrid_elapsed -
-                                        hybrid_stage_begin_elapsed)
-                     : result.hybrid_elapsed,
-                 result.status);
+    notify_stage(PlanningStage::kHybridAStar, PlanningStageState::kFailed,
+                 result.hybrid_elapsed, result.status);
     logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,
                         &error);
     return result;

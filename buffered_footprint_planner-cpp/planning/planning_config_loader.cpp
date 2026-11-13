@@ -44,11 +44,11 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   node.param("traj_gear_switch_penalty", planner.traj_gear_switch_penalty, 10.0);
   node.param("traj_steer_penalty", planner.traj_steer_penalty, 1.0);
   node.param("traj_steer_change_penalty", planner.traj_steer_change_penalty, 5.0);
-  node.param("grid_a_star_xy_resolution", planner.grid_a_star_xy_resolution, 0.03);
   node.param("delta_t", planner.delta_t, 0.5);
   node.param("analytic_expansion_cost", planner.analytic_expansion_cost, 20.0);
   node.param("dubins_phi_gamma", planner.dubins_phi_gamma, 1.1);
   node.param("hybrid_astar_timeout", planner.hybrid_astar_timeout, 8.0);
+  node.param("search_clearance", planner.search_clearance, 0.012);
   int next_node_num = 20;
   int explore_node_num = 2000000;
   node.param("next_node_num", next_node_num, next_node_num);
@@ -84,9 +84,11 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   std::string geometry_error;
   if (next_node_num < 4 || next_node_num % 2 != 0 || explore_node_num <= 0 ||
       planner.xy_grid_resolution <= 0.0 || planner.phi_grid_resolution <= 0.0 ||
-      planner.step_size <= 0.0 || planner.grid_a_star_xy_resolution <= 0.0 ||
+      planner.step_size <= 0.0 ||
       !std::isfinite(planner.hybrid_astar_timeout) ||
       planner.hybrid_astar_timeout <= 0.0 ||
+      !std::isfinite(planner.search_clearance) ||
+      planner.search_clearance <= 0.0 ||
       planner.delta_t <= 0.0 || initial.forward_speed <= 0.0 ||
       initial.reverse_speed <= 0.0 || !std::isfinite(initial.min_dt) ||
       !std::isfinite(initial.max_dt) || initial.min_dt <= 0.0 ||

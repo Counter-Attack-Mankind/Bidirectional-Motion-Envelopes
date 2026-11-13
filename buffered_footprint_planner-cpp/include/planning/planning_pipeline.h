@@ -12,7 +12,6 @@
 namespace planning_platform {
 
 enum class PlanningStage {
-  kDpMap,
   kHybridAStar,
   kInitialGuess,
   kNlpOptimization,
@@ -22,7 +21,7 @@ enum class PlanningStage {
 enum class PlanningStageState { kRunning, kSucceeded, kFailed };
 
 struct PlanningStageUpdate {
-  PlanningStage stage = PlanningStage::kDpMap;
+  PlanningStage stage = PlanningStage::kHybridAStar;
   PlanningStageState state = PlanningStageState::kRunning;
   double stage_elapsed = 0.0;
   double total_elapsed = 0.0;
@@ -38,6 +37,7 @@ struct PlanningRunResult {
   std::string status;
   std::string result_directory;
   double hybrid_elapsed = 0.0;
+  planning::HybridAStarStatistics hybrid_statistics;
   double initial_guess_elapsed = 0.0;
   planning::HybridAStartResult hybrid_path;
   optimizer::Trajectory initial_guess;

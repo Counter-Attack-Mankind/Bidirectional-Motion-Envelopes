@@ -416,24 +416,6 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
   std::size_t interval_index = 0;
   int previous_direction = dense.front().v < 0.0 ? -1 : 1;
   while (current + 1 < dense.size()) {
-    const auto retained_environment = EvaluateEnvironmentValidity(
-        ComputeEmbodiedFootprint(dense[current], 0.0, vehicle), obstacles,
-        bounds, config.dmin);
-    if (!retained_environment.valid) {
-      std::ostringstream message;
-      message << "Reference body is not environment-valid at dense index "
-              << current;
-      if (retained_environment.boundary_violation > 1e-12) {
-        message << " (map boundary violation="
-                << retained_environment.boundary_violation << ")";
-      } else {
-        message << " (obstacle=" << retained_environment.obstacle_index
-                << ", clearance=" << retained_environment.minimum_clearance
-                << " m, required=" << config.dmin << " m)";
-      }
-      if (error) *error = message.str();
-      return false;
-    }
     std::size_t boundary = dense.size() - 1;
     for (std::size_t index : mandatory) {
       if (index > current) { boundary = index; break; }
@@ -457,7 +439,11 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
       return false;
     }
     std::size_t last_valid = current;
+    std::size_t fallback_candidate = current;
     EnvironmentValidity last_environment;
+    EnvironmentValidity fallback_environment;
+    std::string fallback_reason;
+    double fallback_violation = 0.0;
     for (std::size_t candidate : candidates) {
       const double dt = dense_time[candidate] - dense_time[current];
       const int direction = IntervalDirection(dense, current, candidate,
@@ -473,33 +459,61 @@ bool SelectTemporalMesh(const std::vector<TrajectoryNode>& dense,
                                                        config.eta);
       const auto environment = EvaluateEnvironmentValidity(
           footprint, obstacles, bounds, config.dmin);
-      if (mixed_direction || validity.max_violation() > 1e-12 ||
-          !environment.valid) {
+      if (mixed_direction || validity.max_violation() > 1e-12) {
         std::string reason = mixed_direction
                                  ? "mixed_forward_reverse"
                                  : ViolationNames(validity);
-        double violation = validity.max_violation();
-        if (!environment.valid) {
-          if (environment.boundary_violation > 1e-12) {
-            reason = "BME_map_boundary";
-            violation = environment.boundary_violation;
-          } else {
-            reason = "BME_obstacle_clearance[" +
-                     std::to_string(environment.obstacle_index) + "]";
-            violation = std::max(0.0, config.dmin -
-                                          environment.minimum_clearance);
-            ++diagnostics->obstacle_limited_interval_count;
-          }
+        diagnostics->rejected_intervals.push_back({
+            interval_index, current, candidate, dt, footprint.k, footprint.s,
+            reason, validity.max_violation(),
+            {{validity.arc, validity.forward_cond1, validity.forward_cond2,
+              validity.reverse_cond1, validity.reverse_cond2}}});
+        break;
+      }
+      if (fallback_candidate == current) {
+        fallback_candidate = candidate;
+        fallback_environment = environment;
+      }
+      if (!environment.valid) {
+        std::string reason;
+        double violation = 0.0;
+        if (environment.boundary_violation > 1e-12) {
+          reason = "BME_map_boundary";
+          violation = environment.boundary_violation;
+        } else {
+          reason = "BME_obstacle_clearance[" +
+                   std::to_string(environment.obstacle_index) + "]";
+          violation = std::max(0.0, config.dmin -
+                                        environment.minimum_clearance);
+          ++diagnostics->obstacle_limited_interval_count;
         }
         diagnostics->rejected_intervals.push_back({
             interval_index, current, candidate, dt, footprint.k, footprint.s,
             reason, violation,
             {{validity.arc, validity.forward_cond1, validity.forward_cond2,
               validity.reverse_cond1, validity.reverse_cond2}}});
+        if (last_valid == current) {
+          fallback_reason = reason;
+          fallback_violation = violation;
+        }
         break;
       }
       last_valid = candidate;
       last_environment = environment;
+    }
+    if (last_valid == current && fallback_candidate != current) {
+      last_valid = fallback_candidate;
+      last_environment = fallback_environment;
+      diagnostics->environment_fallback_intervals.push_back({
+          interval_index, current, fallback_candidate,
+          dense_time[fallback_candidate] - dense_time[current],
+          fallback_reason, fallback_violation,
+          fallback_environment.minimum_clearance,
+          fallback_environment.boundary_violation});
+      ++diagnostics->environment_fallback_interval_count;
+      diagnostics->max_environment_fallback_violation = std::max(
+          diagnostics->max_environment_fallback_violation,
+          fallback_violation);
     }
     if (last_valid == current) {
       std::ostringstream message;
@@ -831,6 +845,10 @@ bool SaveInitialGuessDiagnostics(const std::string& output_file,
          << d.maximum_available_trajectory_time << '\n'
          << "obstacle_limited_interval_count="
          << d.obstacle_limited_interval_count << '\n'
+         << "environment_fallback_interval_count="
+         << d.environment_fallback_interval_count << '\n'
+         << "max_environment_fallback_violation="
+         << d.max_environment_fallback_violation << '\n'
          << "minimum_bme_obstacle_clearance_m="
          << d.minimum_bme_obstacle_clearance << '\n'
          << "max_bme_map_boundary_violation_m="
@@ -855,6 +873,17 @@ bool SaveInitialGuessDiagnostics(const std::string& output_file,
            << ",EF_forward_cond2:" << item.violations[2]
            << ",EF_reverse_cond1:" << item.violations[3]
            << ",EF_reverse_cond2:" << item.violations[4] << '\n';
+  }
+  for (const auto& item : d.environment_fallback_intervals) {
+    stream << "environment_fallback=interval:" << item.interval_index
+           << ",dense_start:" << item.dense_start
+           << ",dense_end:" << item.dense_end
+           << ",dt_s:" << item.dt
+           << ",condition:" << item.violated_condition
+           << ",violation:" << item.violation
+           << ",obstacle_clearance_m:" << item.obstacle_clearance
+           << ",map_boundary_violation_m:"
+           << item.map_boundary_violation << '\n';
   }
   return static_cast<bool>(stream);
 }

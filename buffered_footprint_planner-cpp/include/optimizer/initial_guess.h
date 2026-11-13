@@ -36,6 +36,17 @@ struct RejectedInterval {
   std::array<double, 5> violations{};
 };
 
+struct EnvironmentFallbackInterval {
+  std::size_t interval_index = 0;
+  std::size_t dense_start = 0;
+  std::size_t dense_end = 0;
+  double dt = 0.0;
+  std::string violated_condition;
+  double violation = 0.0;
+  double obstacle_clearance = std::numeric_limits<double>::infinity();
+  double map_boundary_violation = 0.0;
+};
+
 struct InitialGuessDiagnostics {
   bool success = false;
   std::string failure_reason;
@@ -62,6 +73,8 @@ struct InitialGuessDiagnostics {
   std::size_t structural_min_intervals = 0;
   std::size_t actual_interval_count = 0;
   std::size_t obstacle_limited_interval_count = 0;
+  std::size_t environment_fallback_interval_count = 0;
+  double max_environment_fallback_violation = 0.0;
   double reference_step_cap = 0.0;
   double maximum_available_trajectory_time = 0.0;
   double minimum_bme_obstacle_clearance =
@@ -77,6 +90,7 @@ struct InitialGuessDiagnostics {
   std::size_t acceleration_clip_count = 0;
   std::size_t steering_rate_clip_count = 0;
   std::vector<RejectedInterval> rejected_intervals;
+  std::vector<EnvironmentFallbackInterval> environment_fallback_intervals;
 };
 
 struct DenseTrajectorySample {
