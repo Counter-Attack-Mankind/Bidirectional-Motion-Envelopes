@@ -1,65 +1,93 @@
 # BME 双向具身足迹轨迹规划系统
 
-本工程是 ROS1 Noetic / C++17 实现的双向具身足迹（Bidirectional Motion
-Envelopes，BME）轨迹规划系统，包含 Hybrid A*、初值生成、CasADi/IPOPT
-非线性优化、仿真回放以及 Nokov 动捕实车接入。
+本目录是 C++ 项目总目录，同时也是可直接放入 catkin 工作空间 `src/` 的
+多功能包集合。目录组织参考 `fork_planner`：BME 主功能包和实车实验功能包
+互为同级目录，catkin 会递归发现它们，不需要复制功能包或创建软链接。
 
-## 目录说明
+```text
+buffered_footprint_planner-cpp/
+├── buffered_footprint_planner/   # BME 主功能包
+│   ├── CMakeLists.txt
+│   ├── package.xml
+│   ├── common/ config/ execution/ include/
+│   ├── launch/ optimizer/ planning/ scene/
+│   └── src/ srv/ tests/ visualize/ results/
+├── experiment/                   # 独立实验功能包集合
+│   ├── sandbox_msgs/
+│   ├── pure_pursuit/
+│   ├── lqr_controller/
+│   ├── nokov_localization/
+│   ├── vrpn_client_ros/
+│   └── chassis/
+├── README.md
+└── REAL_VEHICLE.md
+```
 
-- `planning/hybrid_astar/`：Hybrid A* 与 Reeds–Shepp 搜索实现。
-- `include/planning/hybrid_astar/`：对应公共头文件。
-- `optimizer/`：BME 初值与非线性优化。
-- `scene/`：场景、动捕场景恢复及键盘编辑脚本。
-- `visualize/`：规划阶段、轨迹回放、BME 和实际扫掠区域可视化。
-- `execution/`：实车任务状态机、轨迹适配与每任务日志。
-- `experiment/`：实车依赖包（消息、VRPN、Pure Pursuit、底盘）。
+## 本机开发环境
 
-## 编译
+本机缺少底盘所需 TinyProtocol 等现场依赖，因此仓库有意保留：
 
-将本包与 `sandbox_msgs` 放入 Noetic catkin 工作空间。实车模式还需要把
-`vrpn_client_ros`、`pure_pursuit` 和 `chassis` 作为同级包放入 `src/`；完整
-工作空间布局和依赖见 [REAL_VEHICLE.md](REAL_VEHICLE.md)。
+- `experiment/vrpn_client_ros/CATKIN_IGNORE`
+- `experiment/chassis/CATKIN_IGNORE`
+
+不要在本机删除这两个标记，也不需要为验证本工程安装额外依赖。将整个项目
+目录直接放在 Noetic 工作空间的 `src/` 下即可：
 
 ```bash
+mkdir -p ~/catkin_ws/src
+cp -a buffered_footprint_planner-cpp ~/catkin_ws/src/
+cd ~/catkin_ws
+source /opt/ros/noetic/setup.bash
 catkin_make -DCMAKE_BUILD_TYPE=Release
 source devel/setup.bash
 ```
 
-## 运行
+catkin 会自动发现 BME、`sandbox_msgs`、Pure Pursuit 等未被忽略的包，并跳过
+上述两个现场包。
 
-仿真与普通规划沿用工程现有 launch。实车接入默认只规划、不驱动车辆：
+回归测试：
 
 ```bash
+catkin_make -DCMAKE_BUILD_TYPE=Release -DCATKIN_ENABLE_TESTING=ON
+catkin_make run_tests_buffered_footprint_planner
+catkin_test_results
+```
+
+## 实验室实车环境
+
+实验室电脑已经安装 VRPN、TinyProtocol/tinyhal 及底盘所需依赖。仍然将整个
+项目目录直接放入工作空间 `src/`，现场仅删除两个忽略标记后编译：
+
+```bash
+cd ~/catkin_ws/src/buffered_footprint_planner-cpp
+rm experiment/vrpn_client_ros/CATKIN_IGNORE
+rm experiment/chassis/CATKIN_IGNORE
+cd ~/catkin_ws
+source /opt/ros/noetic/setup.bash
+catkin_make -DCMAKE_BUILD_TYPE=Release
+source devel/setup.bash
+```
+
+不需要移动、复制或链接其中任何功能包，也不需要修改或刷写 Arduino 固件。
+实车检查清单见 [REAL_VEHICLE.md](REAL_VEHICLE.md)。
+
+## 启动方式
+
+工程重组不改变 ROS 包名和 launch 文件名，原有四种命令保持不变：
+
+```bash
+roslaunch buffered_footprint_planner simulation.launch
+roslaunch buffered_footprint_planner scene_create.launch
+roslaunch buffered_footprint_planner experiment.launch task:=task1
 roslaunch buffered_footprint_planner real_vehicle.launch server:=NOKOV_IP
 ```
 
-确认坐标、单位、后轴参考点、障碍标记和物理急停后，才可显式打开执行：
+实车执行仍需显式授权：
 
 ```bash
 roslaunch buffered_footprint_planner real_vehicle.launch \
   server:=NOKOV_IP enable_execution:=true serial_port:=/dev/ttyUSB0
 ```
 
-默认 Nokov 端口为 `3883`、更新频率为 `100 Hz`。车辆刚体命名为
-`VehicleN`，后轴候选标记命名为 `VehicleN_MarkerM`，障碍物标记命名为
-`ObstacleN_MarkerM`。任一已发现障碍标记遮挡后，系统保留最后可信 OBB
-用于显示，但立即禁止执行；无障碍现场必须显式设置
-`mocap/allow_empty_obstacles: true`。
-
-## 实车安全与数据
-
-底盘原始控制协议、方向和限幅保持原工程不变。ROS 层的
-`chassis_command_guard_node` 独立负责急停与命令超时，不要求修改或刷写
-Arduino 固件。每次成功执行会在该规划结果目录生成
-`actual_tracking.csv` 和 `control_commands.csv`。软件保护不能替代物理急停，
-首次上车必须进行架空轮测试。
-
-## 测试
-
-```bash
-catkin_make run_tests_buffered_footprint_planner
-catkin_test_results
-```
-
-回归测试覆盖 Hybrid A*、超时、轨迹适配、OBB 等价朝向、动捕数据失效、
-执行授权撤销和多轮任务状态。测试目标在 Release 构建中也显式启用断言。
+软件急停和命令超时保护不能替代物理急停。首次上车必须核对单位、坐标变换、
+后轴参考点、转向符号和限幅，并进行架空轮测试。

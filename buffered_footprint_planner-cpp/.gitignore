@@ -1,2 +1,2 @@
-results/*
-!results/.gitkeep
+buffered_footprint_planner/results/*
+!buffered_footprint_planner/results/.gitkeep
