@@ -20,6 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
   interactive_markers
   message_generation
   roscpp
+  sandbox_msgs
   std_msgs
   tf2
   tf2_geometry_msgs
@@ -37,6 +38,7 @@ catkin_package(
             planning_config experiment_runner
   CATKIN_DEPENDS geometry_msgs message_runtime roscpp std_msgs tf2
                  tf2_geometry_msgs visualization_msgs interactive_markers
+                 sandbox_msgs
 )
 
 include_directories(
@@ -44,6 +46,7 @@ include_directories(
   include/common/math
   ${catkin_INCLUDE_DIRS}
   ${CASADI_INCLUDE_DIRS}
+  ${sandbox_msgs_INCLUDE_DIRS}
 )
 link_directories(${CASADI_LIBRARY_DIRS})
 
@@ -76,6 +79,10 @@ add_library(scene_core
   scene/scene_recorder.cpp
 )
 target_link_libraries(scene_core common_math yaml-cpp ${catkin_LIBRARIES})
+
+add_library(mocap_scene_provider scene/mocap_scene_provider.cpp)
+target_link_libraries(mocap_scene_provider scene_core common_math
+                      ${catkin_LIBRARIES})
 
 add_library(visualization_plot visualize/visualization_plot.cpp)
 target_link_libraries(visualization_plot common_math common_util ${catkin_LIBRARIES})
@@ -121,6 +128,13 @@ target_link_libraries(planning_pipeline planning_config hybrid_astar footprint_o
 add_library(experiment_runner planning/experiment_runner.cpp)
 target_link_libraries(experiment_runner planning_pipeline scene_core)
 
+add_library(experiment_manager execution/experiment_manager.cpp)
+target_link_libraries(experiment_manager scene_core common_math)
+
+add_library(real_vehicle_execution execution/trajectory_adapter.cpp)
+target_link_libraries(real_vehicle_execution experiment_manager scene_core common_math
+                      ${catkin_LIBRARIES})
+
 add_executable(simulation_node src/simulation_node.cpp)
 target_link_libraries(simulation_node scene_core scene_visualizer ${catkin_LIBRARIES})
 add_dependencies(simulation_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -144,6 +158,13 @@ target_link_libraries(experiment_node experiment_runner planning_pipeline
                       ${catkin_LIBRARIES})
 add_dependencies(experiment_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
+add_executable(real_vehicle_node src/real_vehicle_node.cpp)
+target_link_libraries(real_vehicle_node mocap_scene_provider
+                      real_vehicle_execution planning_pipeline scene_core
+                      scene_visualizer ${catkin_LIBRARIES})
+add_dependencies(real_vehicle_node ${${PROJECT_NAME}_EXPORTED_TARGETS}
+                 ${catkin_EXPORTED_TARGETS})
+
 catkin_install_python(PROGRAMS scripts/keyboard_editor.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
@@ -159,13 +180,25 @@ if(CATKIN_ENABLE_TESTING)
   target_link_libraries(hybrid_astar_timeout_regression hybrid_astar)
   add_test(NAME hybrid_astar_timeout_regression
            COMMAND hybrid_astar_timeout_regression)
+
+  add_executable(experiment_manager_regression
+    tests/experiment_manager_regression.cpp)
+  target_link_libraries(experiment_manager_regression experiment_manager)
+  add_test(NAME experiment_manager_regression COMMAND experiment_manager_regression)
+
+  add_executable(trajectory_adapter_regression
+    tests/trajectory_adapter_regression.cpp)
+  target_link_libraries(trajectory_adapter_regression real_vehicle_execution
+                        ${catkin_LIBRARIES})
+  add_test(NAME trajectory_adapter_regression COMMAND trajectory_adapter_regression)
 endif()
 
 install(TARGETS common_math common_util hybrid_astar visualization_plot
                 scene_visualizer trajectory_player footprint_visualizer
                 swept_area_visualizer trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
-                planning_config experiment_runner simulation_node planning_node scene_recorder_node
-                experiment_node
+                planning_config experiment_runner experiment_manager mocap_scene_provider
+                real_vehicle_execution simulation_node planning_node
+                scene_recorder_node experiment_node real_vehicle_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

@@ -1,0 +1,64 @@
+<launch>
+  <arg name="server" default="localhost"/>
+  <arg name="port" default="3883"/>
+  <arg name="enable_execution" default="false"/>
+  <arg name="launch_rviz" default="true"/>
+  <arg name="launch_vrpn" default="true"/>
+  <arg name="launch_chassis" default="true"/>
+  <arg name="serial_port" default="/dev/ttyUSB0"/>
+  <arg name="results_root"
+       default="$(find buffered_footprint_planner)/results"/>
+
+  <node if="$(arg launch_vrpn)" pkg="vrpn_client_ros"
+        type="vrpn_client_node" name="vrpn_client_node" output="screen"
+        required="true">
+    <param name="server" value="$(arg server)"/>
+    <param name="port" value="$(arg port)"/>
+    <param name="update_frequency" value="100.0"/>
+    <param name="refresh_tracker_frequency" value="1.0"/>
+    <param name="frame_id" value="world"/>
+    <param name="use_server_time" value="false"/>
+    <param name="broadcast_tf" value="false"/>
+  </node>
+
+  <node pkg="buffered_footprint_planner" type="real_vehicle_node"
+        name="buffered_footprint_real_vehicle" output="screen"
+        required="true">
+    <rosparam command="load"
+              file="$(find buffered_footprint_planner)/config/real_vehicle.yaml"/>
+    <rosparam command="load"
+              file="$(find buffered_footprint_planner)/config/planner.yaml"/>
+    <rosparam command="load"
+              file="$(find buffered_footprint_planner)/config/optimizer.yaml"/>
+    <param name="enable_execution" value="$(arg enable_execution)"/>
+    <param name="results_directory" value="$(arg results_root)"/>
+  </node>
+
+  <group if="$(arg enable_execution)">
+    <node pkg="pure_pursuit" type="pure_pursuit_node"
+          name="pure_pursuit_real_vehicle" output="screen" required="true">
+      <rosparam command="load"
+                file="$(find pure_pursuit)/config/pure_pursuit.yaml"/>
+      <param name="trajectory_topic" value="/traj"/>
+      <param name="auto_target" value="true"/>
+      <param name="object_position_scale" value="1.0"/>
+      <param name="localization_timeout" value="0.25"/>
+      <param name="execution_enabled" value="true"/>
+      <param name="require_stop_at_cusp" value="true"/>
+      <param name="cusp_stop_speed" value="0.02"/>
+      <param name="require_velocity_for_reached" value="true"/>
+      <param name="final_stop_speed" value="0.02"/>
+      <param name="visualization_frame" value="map"/>
+      <param name="debug_log_enable" value="true"/>
+      <param name="debug_log_dir" value="$(arg results_root)/tracking"/>
+    </node>
+    <node if="$(arg launch_chassis)" pkg="chassis" type="chassis_node"
+          name="chassis_node" output="screen" required="true">
+      <param name="serial_port" value="$(arg serial_port)"/>
+      <param name="command_timeout" value="0.30"/>
+    </node>
+  </group>
+
+  <node if="$(arg launch_rviz)" pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find buffered_footprint_planner)/config/rviz.rviz"/>
+</launch>

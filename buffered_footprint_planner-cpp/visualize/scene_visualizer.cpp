@@ -78,6 +78,11 @@ void SceneVisualizer::QueueStart(const scene::Pose2d& start,
             Color::Green);
 }
 
+void SceneVisualizer::QueueVehicle(const scene::Pose2d& pose,
+                                   const std::string& label) const {
+  QueuePose(pose, "mocap_vehicle", label, Color::Green);
+}
+
 void SceneVisualizer::QueueGoal(const scene::Pose2d& goal) const {
   QueuePose(goal, "goal", "GOAL", Color::Magenta);
 }

@@ -31,6 +31,8 @@ class SceneVisualizer {
   void QueueObstacle(const scene::SceneObstacle& obstacle,
                      std::size_t index) const;
   void QueueStart(const scene::Pose2d& start, bool locked = false) const;
+  void QueueVehicle(const scene::Pose2d& pose,
+                    const std::string& label) const;
   void QueueGoal(const scene::Pose2d& goal) const;
   void QueuePlanningStage(const std::array<double, 4>& bounds,
                           const std::string& text) const;

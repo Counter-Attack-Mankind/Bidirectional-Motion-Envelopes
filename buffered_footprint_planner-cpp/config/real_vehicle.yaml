@@ -1,0 +1,44 @@
+# Static planning data. Vehicle ID, obstacle IDs/counts, obstacle poses and
+# obstacle dimensions are intentionally absent: they are discovered from VRPN.
+frame_id: map
+
+map:
+  x_min: 0.0
+  x_max: 4.5
+  y_min: 0.0
+  y_max: 2.5
+
+goal:
+  x: 4.00
+  y: 1.25
+  yaw: -3.141592653589793
+
+obstacles: []
+
+mocap:
+  vrpn_namespace: /vrpn_client_node
+  # nokov_localization_v2.py and the existing PP indicate that the current
+  # Nokov/VRPN positions are millimetres. Confirm this at the venue.
+  position_scale: 0.001
+  map_rotation: 0.0
+  map_translation_x: 0.0
+  map_translation_y: 0.0
+  vehicle_yaw_offset: 0.0
+  # Translation from the published VehicleN rigid-body origin to rear axle
+  # centre, expressed in the vehicle frame after unit conversion.
+  body_to_rear_axle_x: 0.0
+  body_to_rear_axle_y: 0.0
+  data_timeout: 0.25
+  geometry_retention: 2.0
+  obstacle_padding: 0.0
+  minimum_obstacle_markers: 3
+experiment:
+  stationary_duration: 3.0
+  position_threshold: 0.002
+  yaw_threshold: 0.0087266463
+  scene_position_threshold: 0.015
+  scene_yaw_threshold: 0.034906585
+  rearm_distance: 0.10
+
+visualization:
+  show_hybrid_search: true
