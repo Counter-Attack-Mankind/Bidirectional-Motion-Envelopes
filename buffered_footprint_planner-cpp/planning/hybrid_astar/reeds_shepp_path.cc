@@ -18,7 +18,7 @@
  * @file
  */
 
-#include "hybrid_astar/reeds_shepp_path.h"
+#include "planning/hybrid_astar/reeds_shepp_path.h"
 
 #include <algorithm>
 #include <numeric>

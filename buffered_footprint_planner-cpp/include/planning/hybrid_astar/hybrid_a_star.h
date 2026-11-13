@@ -33,10 +33,10 @@
 #include <limits>
 
 #include "common/math/math_utils.h"
-#include "hybrid_astar/node3d.h"
-#include "hybrid_astar/reeds_shepp_path.h"
-#include "hybrid_astar/vehicle_parameter.h"
-#include "hybrid_astar/parking_planner_config.h"
+#include "planning/hybrid_astar/node3d.h"
+#include "planning/hybrid_astar/reeds_shepp_path.h"
+#include "planning/hybrid_astar/vehicle_parameter.h"
+#include "planning/hybrid_astar/parking_planner_config.h"
 
 namespace planning {
 

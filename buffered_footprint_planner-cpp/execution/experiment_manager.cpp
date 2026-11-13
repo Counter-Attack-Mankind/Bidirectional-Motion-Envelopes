@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <map>
 
 #include "common/math/math_utils.h"
@@ -22,23 +23,40 @@ double YawDistance(double lhs, double rhs) {
 ExperimentManager::ExperimentManager(Configuration configuration)
     : configuration_(configuration) {}
 
-bool ExperimentManager::SceneMoved(const scene::SceneSnapshot& lhs,
-                                   const scene::SceneSnapshot& rhs) const {
+double ExperimentManager::ObstacleBoundaryDistance(
+    const scene::SceneObstacle& lhs, const scene::SceneObstacle& rhs) {
+  const auto left_polygon = lhs.polygon();
+  const auto right_polygon = rhs.polygon();
+  const auto& left = left_polygon.points();
+  const auto& right = right_polygon.points();
+  if (left.size() != 4 || right.size() != 4)
+    return std::numeric_limits<double>::infinity();
+  double best = std::numeric_limits<double>::infinity();
+  for (std::size_t offset = 0; offset < 4; ++offset) {
+    for (int direction : {1, -1}) {
+      double maximum = 0.0;
+      for (std::size_t i = 0; i < 4; ++i) {
+        const std::size_t index = static_cast<std::size_t>(
+            (static_cast<int>(offset) + direction * static_cast<int>(i) + 8) % 4);
+        maximum = std::max(maximum, left[i].DistanceTo(right[index]));
+      }
+      best = std::min(best, maximum);
+    }
+  }
+  return best;
+}
+
+bool ExperimentManager::ObstaclesMoved(const scene::SceneSnapshot& lhs,
+                                       const scene::SceneSnapshot& rhs,
+                                       double boundary_threshold) const {
   if (lhs.obstacles.size() != rhs.obstacles.size()) return true;
   std::map<std::string, const scene::SceneObstacle*> lookup;
   for (const auto& obstacle : lhs.obstacles) lookup[obstacle.id] = &obstacle;
   for (const auto& obstacle : rhs.obstacles) {
     const auto found = lookup.find(obstacle.id);
     if (found == lookup.end()) return true;
-    if (std::hypot(found->second->x - obstacle.x,
-                   found->second->y - obstacle.y) >
-            configuration_.scene_position_threshold ||
-        YawDistance(found->second->yaw, obstacle.yaw) >
-            configuration_.scene_yaw_threshold ||
-        std::abs(found->second->length - obstacle.length) >
-            configuration_.scene_position_threshold ||
-        std::abs(found->second->width - obstacle.width) >
-            configuration_.scene_position_threshold) return true;
+    if (ObstacleBoundaryDistance(*found->second, obstacle) >
+        boundary_threshold) return true;
   }
   return false;
 }
@@ -65,10 +83,11 @@ void ExperimentManager::Observe(const scene::SceneSnapshot& snapshot,
   }
   if (state_ == State::kPlanning) {
     if (PoseDistance(snapshot.start, frozen_.start) >
-            configuration_.scene_position_threshold ||
+            configuration_.frozen_vehicle_position_threshold ||
         YawDistance(snapshot.start.yaw, frozen_.start.yaw) >
-            configuration_.scene_yaw_threshold ||
-        SceneMoved(snapshot, frozen_)) {
+            configuration_.frozen_vehicle_yaw_threshold ||
+        ObstaclesMoved(snapshot, frozen_,
+                       configuration_.frozen_obstacle_boundary_threshold)) {
       frozen_scene_valid_ = false;
     }
     return;
@@ -76,7 +95,8 @@ void ExperimentManager::Observe(const scene::SceneSnapshot& snapshot,
   if (state_ == State::kTracking) {
     // Vehicle motion is expected while tracking. Only the frozen obstacle set
     // (or data validity handled above) can invalidate an executing task.
-    if (SceneMoved(snapshot, frozen_)) {
+    if (ObstaclesMoved(snapshot, frozen_,
+                       configuration_.frozen_obstacle_boundary_threshold)) {
       frozen_scene_valid_ = false;
       state_ = State::kWaitingForSceneChange;
     }
@@ -84,8 +104,10 @@ void ExperimentManager::Observe(const scene::SceneSnapshot& snapshot,
   }
   if (state_ == State::kCompleted) {
     if (have_stopped_pose_ &&
-        PoseDistance(snapshot.start, stopped_pose_) >=
-            configuration_.rearm_distance) {
+        (PoseDistance(snapshot.start, stopped_pose_) >=
+             configuration_.rearm_distance ||
+         ObstaclesMoved(snapshot, frozen_,
+                        configuration_.frozen_obstacle_boundary_threshold))) {
       stable_reference_ = snapshot;
       stable_since_ = now;
       state_ = State::kWaitingForStationary;
@@ -93,9 +115,10 @@ void ExperimentManager::Observe(const scene::SceneSnapshot& snapshot,
     return;
   }
   if (state_ == State::kWaitingForSceneChange) {
-    if (SceneMoved(snapshot, frozen_) ||
+    if (ObstaclesMoved(snapshot, frozen_,
+                       configuration_.frozen_obstacle_boundary_threshold) ||
         PoseDistance(snapshot.start, frozen_.start) >
-            configuration_.scene_position_threshold) {
+            configuration_.frozen_vehicle_position_threshold) {
       stable_reference_ = snapshot;
       stable_since_ = now;
       state_ = State::kWaitingForStationary;
@@ -105,10 +128,11 @@ void ExperimentManager::Observe(const scene::SceneSnapshot& snapshot,
   if (state_ != State::kWaitingForStationary) return;
   const bool moving =
       PoseDistance(snapshot.start, stable_reference_.start) >
-          configuration_.position_threshold ||
+          configuration_.vehicle_stationary_position_threshold ||
       YawDistance(snapshot.start.yaw, stable_reference_.start.yaw) >
-          configuration_.yaw_threshold ||
-      SceneMoved(snapshot, stable_reference_);
+          configuration_.vehicle_stationary_yaw_threshold ||
+      ObstaclesMoved(snapshot, stable_reference_,
+                     configuration_.obstacle_stationary_boundary_threshold);
   if (moving) {
     stable_reference_ = snapshot;
     stable_since_ = now;
@@ -126,7 +150,9 @@ bool ExperimentManager::BeginPlanning(scene::SceneSnapshot* frozen,
   frozen_scene_valid_ = true;
   state_ = State::kPlanning;
   if (frozen) *frozen = frozen_;
-  if (generation) *generation = frozen_revision_;
+  // task_id_ is monotonically increasing even when the mocap geometry
+  // revision is unchanged.  Async work must be keyed by this unique token.
+  if (generation) *generation = task_id_;
   return true;
 }
 
@@ -151,6 +177,11 @@ void ExperimentManager::Reached(const scene::Pose2d& stopped_pose) {
 }
 
 void ExperimentManager::ForceSafeWait() {
+  frozen_scene_valid_ = false;
+  state_ = State::kWaitingForData;
+}
+
+void ExperimentManager::AbortTask() {
   frozen_scene_valid_ = false;
   state_ = State::kWaitingForData;
 }

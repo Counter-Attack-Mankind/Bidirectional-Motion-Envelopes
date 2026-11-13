@@ -27,9 +27,9 @@
 #include <utility>
 #include <vector>
 
-#include "hybrid_astar/parking_planner_config.h"
+#include "planning/hybrid_astar/parking_planner_config.h"
 #include "common/math/math_utils.h"
-#include "hybrid_astar/node3d.h"
+#include "planning/hybrid_astar/node3d.h"
 
 namespace planning {
 

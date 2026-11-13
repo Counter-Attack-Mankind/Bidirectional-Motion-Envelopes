@@ -48,17 +48,23 @@ class MocapSceneProvider {
   void DiscoverTopics(const ros::TimerEvent&);
   void VehicleCallback(int id,
                        const geometry_msgs::PoseStamped::ConstPtr& message);
+  void VehicleMarkerCallback(
+      int vehicle_id, int marker_id,
+      const geometry_msgs::PoseStamped::ConstPtr& message);
   void MarkerCallback(int obstacle_id, int marker_id,
                       const geometry_msgs::PoseStamped::ConstPtr& message);
   void RefreshGeometry(const ros::Time& now);
   Status StatusLocked(const ros::Time& now) const;
 
-  Pose2d TransformVehicle(const geometry_msgs::PoseStamped& pose) const;
+  Pose2d TransformVehicle(int vehicle_id,
+                          const geometry_msgs::PoseStamped& pose,
+                          const ros::Time& now) const;
   common::math::Vec2d TransformPoint(double x, double y) const;
 
   mutable std::mutex mutex_;
   SceneSnapshot static_scene_;
   std::map<int, Sample> vehicles_;
+  std::map<int, std::map<int, Sample>> vehicle_markers_;
   std::map<int, ObstacleTrack> obstacles_;
   std::map<std::string, ros::Subscriber> subscribers_;
   ros::Timer discovery_timer_;
@@ -75,6 +81,8 @@ class MocapSceneProvider {
   double geometry_retention_ = 2.0;
   double obstacle_padding_ = 0.0;
   int minimum_obstacle_markers_ = 3;
+  bool use_vehicle_rear_marker_ = true;
+  bool allow_empty_obstacles_ = false;
   std::uint64_t revision_ = 0;
 };
 

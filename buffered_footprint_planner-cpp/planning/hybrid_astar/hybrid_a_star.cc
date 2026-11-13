@@ -18,7 +18,7 @@
  * @file
  */
 
-#include "hybrid_astar/hybrid_a_star.h"
+#include "planning/hybrid_astar/hybrid_a_star.h"
 
 #include <chrono>
 #include <memory>

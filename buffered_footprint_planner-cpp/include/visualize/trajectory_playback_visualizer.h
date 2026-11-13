@@ -5,7 +5,7 @@
 
 #include <ros/ros.h>
 
-#include "hybrid_astar/vehicle_parameter.h"
+#include "planning/hybrid_astar/vehicle_parameter.h"
 #include "optimizer/trajectory.h"
 #include "visualize/footprint_visualizer.h"
 #include "visualize/scene_visualizer.h"

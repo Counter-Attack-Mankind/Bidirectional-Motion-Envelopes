@@ -3,7 +3,7 @@
 #include <functional>
 #include <string>
 
-#include "hybrid_astar/hybrid_a_star.h"
+#include "planning/hybrid_astar/hybrid_a_star.h"
 #include "optimizer/initial_guess.h"
 #include "optimizer/trajectory.h"
 #include "planning/planning_config_loader.h"

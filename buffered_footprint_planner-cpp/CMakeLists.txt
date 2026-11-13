@@ -35,7 +35,7 @@ catkin_package(
   LIBRARIES common_math common_util hybrid_astar visualization_plot
             scene_visualizer trajectory_player footprint_visualizer
             swept_area_visualizer trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
-            planning_config experiment_runner
+            real_vehicle_visualizer planning_config experiment_runner
   CATKIN_DEPENDS geometry_msgs message_runtime roscpp std_msgs tf2
                  tf2_geometry_msgs visualization_msgs interactive_markers
                  sandbox_msgs
@@ -66,9 +66,9 @@ add_library(common_util
 target_link_libraries(common_util common_math ${catkin_LIBRARIES})
 
 add_library(hybrid_astar
-  hybrid_astar/hybrid_a_star.cc
-  hybrid_astar/node3d.cc
-  hybrid_astar/reeds_shepp_path.cc
+  planning/hybrid_astar/hybrid_a_star.cc
+  planning/hybrid_astar/node3d.cc
+  planning/hybrid_astar/reeds_shepp_path.cc
 )
 target_link_libraries(hybrid_astar common_math common_util)
 
@@ -107,6 +107,10 @@ target_link_libraries(trajectory_playback_visualizer trajectory_player
                       footprint_visualizer swept_area_visualizer
                       scene_visualizer ${catkin_LIBRARIES})
 
+add_library(real_vehicle_visualizer visualize/real_vehicle_visualizer.cpp)
+target_link_libraries(real_vehicle_visualizer footprint_visualizer
+                      swept_area_visualizer visualization_plot)
+
 add_library(footprint_optimizer
   optimizer/embodied_footprint.cpp
   optimizer/initial_guess.cpp
@@ -135,6 +139,9 @@ add_library(real_vehicle_execution execution/trajectory_adapter.cpp)
 target_link_libraries(real_vehicle_execution experiment_manager scene_core common_math
                       ${catkin_LIBRARIES})
 
+add_library(real_vehicle_logger execution/real_vehicle_logger.cpp)
+target_link_libraries(real_vehicle_logger scene_core ${catkin_LIBRARIES})
+
 add_executable(simulation_node src/simulation_node.cpp)
 target_link_libraries(simulation_node scene_core scene_visualizer ${catkin_LIBRARIES})
 add_dependencies(simulation_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -161,11 +168,14 @@ add_dependencies(experiment_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EX
 add_executable(real_vehicle_node src/real_vehicle_node.cpp)
 target_link_libraries(real_vehicle_node mocap_scene_provider
                       real_vehicle_execution planning_pipeline scene_core
-                      scene_visualizer ${catkin_LIBRARIES})
+                      real_vehicle_logger
+                      scene_visualizer trajectory_playback_visualizer
+                      real_vehicle_visualizer
+                      ${catkin_LIBRARIES})
 add_dependencies(real_vehicle_node ${${PROJECT_NAME}_EXPORTED_TARGETS}
                  ${catkin_EXPORTED_TARGETS})
 
-catkin_install_python(PROGRAMS scripts/keyboard_editor.py
+catkin_install_python(PROGRAMS scene/scripts/keyboard_editor.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
@@ -177,27 +187,36 @@ if(CATKIN_ENABLE_TESTING)
 
   add_executable(hybrid_astar_timeout_regression
     tests/hybrid_astar_timeout_regression.cpp)
+  target_compile_options(hybrid_astar_timeout_regression PRIVATE -UNDEBUG)
   target_link_libraries(hybrid_astar_timeout_regression hybrid_astar)
   add_test(NAME hybrid_astar_timeout_regression
            COMMAND hybrid_astar_timeout_regression)
 
   add_executable(experiment_manager_regression
     tests/experiment_manager_regression.cpp)
+  target_compile_options(experiment_manager_regression PRIVATE -UNDEBUG)
   target_link_libraries(experiment_manager_regression experiment_manager)
   add_test(NAME experiment_manager_regression COMMAND experiment_manager_regression)
 
   add_executable(trajectory_adapter_regression
     tests/trajectory_adapter_regression.cpp)
+  target_compile_options(trajectory_adapter_regression PRIVATE -UNDEBUG)
   target_link_libraries(trajectory_adapter_regression real_vehicle_execution
                         ${catkin_LIBRARIES})
   add_test(NAME trajectory_adapter_regression COMMAND trajectory_adapter_regression)
+
+  add_executable(task_generation_regression
+    tests/task_generation_regression.cpp)
+  target_compile_options(task_generation_regression PRIVATE -UNDEBUG)
+  add_test(NAME task_generation_regression COMMAND task_generation_regression)
 endif()
 
 install(TARGETS common_math common_util hybrid_astar visualization_plot
                 scene_visualizer trajectory_player footprint_visualizer
                 swept_area_visualizer trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
+                real_vehicle_visualizer
                 planning_config experiment_runner experiment_manager mocap_scene_provider
-                real_vehicle_execution simulation_node planning_node
+                real_vehicle_execution real_vehicle_logger simulation_node planning_node
                 scene_recorder_node experiment_node real_vehicle_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

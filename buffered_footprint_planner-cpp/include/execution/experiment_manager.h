@@ -21,10 +21,12 @@ class ExperimentManager {
 
   struct Configuration {
     double stationary_duration = 3.0;
-    double position_threshold = 0.002;
-    double yaw_threshold = 0.0087266463;
-    double scene_position_threshold = 0.015;
-    double scene_yaw_threshold = 0.034906585;
+    double vehicle_stationary_position_threshold = 0.002;
+    double vehicle_stationary_yaw_threshold = 0.0087266463;
+    double obstacle_stationary_boundary_threshold = 0.002;
+    double frozen_vehicle_position_threshold = 0.003;
+    double frozen_vehicle_yaw_threshold = 0.0087266463;
+    double frozen_obstacle_boundary_threshold = 0.003;
     double rearm_distance = 0.10;
   };
 
@@ -35,6 +37,10 @@ class ExperimentManager {
   void PlanningFinished(bool success, bool execute);
   void Reached(const scene::Pose2d& stopped_pose);
   void ForceSafeWait();
+  void AbortTask();
+
+  static double ObstacleBoundaryDistance(
+      const scene::SceneObstacle& lhs, const scene::SceneObstacle& rhs);
 
   State state() const { return state_; }
   bool frozen_scene_valid() const { return frozen_scene_valid_; }
@@ -42,8 +48,9 @@ class ExperimentManager {
   std::string StateName() const;
 
  private:
-  bool SceneMoved(const scene::SceneSnapshot& lhs,
-                  const scene::SceneSnapshot& rhs) const;
+  bool ObstaclesMoved(const scene::SceneSnapshot& lhs,
+                      const scene::SceneSnapshot& rhs,
+                      double boundary_threshold) const;
 
   Configuration configuration_;
   State state_ = State::kWaitingForData;

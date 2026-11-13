@@ -18,7 +18,7 @@
  * @file
  */
 
-#include "hybrid_astar/node3d.h"
+#include "planning/hybrid_astar/node3d.h"
 #include <array>
 #include <cassert>
 

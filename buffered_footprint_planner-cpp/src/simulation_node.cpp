@@ -22,7 +22,7 @@
 #include "buffered_footprint_planner/SetObjectPose.h"
 #include "common/math/math_utils.h"
 #include "scene/scenario_manager.h"
-#include "hybrid_astar/vehicle_parameter.h"
+#include "planning/hybrid_astar/vehicle_parameter.h"
 #include "visualize/scene_visualizer.h"
 
 namespace {

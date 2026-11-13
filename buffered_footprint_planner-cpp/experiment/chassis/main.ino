@@ -59,8 +59,6 @@ int targetAngle_ = 0;
 int voltage_;
 float velocityKp_ = 10.0, velocityKi_ =  1.0;
 bool racing_ = true;
-volatile unsigned long lastTwistCommandMs_ = 0;
-const unsigned long COMMAND_TIMEOUT_MS = 350;
 
 Tiny::ProtoLight proto;
 Tiny::Packet<32> g_packet;
@@ -151,7 +149,6 @@ void handleMessage(byte type, byte *data, int len) {
     TwistMessage *ptr = (TwistMessage *)data;
     targetVelocity_ = min(max(ptr->velocity, -100), 100);
     targetAngle_ = min(max(ptr->angle, -40), 40);
-    lastTwistCommandMs_ = millis();
   } else if (type == MSG_TYPE_PID) {
     if (len != sizeof(PIDMessage)) return;
     PIDMessage *pid = (PIDMessage *)data;
@@ -165,13 +162,6 @@ void timer() {
 
   measureVelocity();
   measureVoltage();
-
-  // Independent firmware safety boundary: a dead ROS process, disconnected
-  // USB cable, or stalled host must not leave the last non-zero command active.
-  if (millis() - lastTwistCommandMs_ > COMMAND_TIMEOUT_MS) {
-    targetVelocity_ = 0;
-    targetAngle_ = 0;
-  }
 
   if (racing_) {
     control();

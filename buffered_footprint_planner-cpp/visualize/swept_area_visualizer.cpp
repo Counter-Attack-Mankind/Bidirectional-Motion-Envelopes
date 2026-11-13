@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include "common/math/math_utils.h"
 #include "common/math/pose.h"
@@ -12,12 +13,14 @@ namespace visualization {
 
 bool SweptAreaVisualizer::Initialize(const VehicleParameter& vehicle,
                                      double resolution,
-                                     std::string* error) {
+                                     std::string* error,
+                                     std::string marker_namespace) {
   if (!std::isfinite(resolution) || resolution <= 0.0) {
     if (error) *error = "Swept-area resolution must be finite and positive";
     return false;
   }
   vehicle_ = vehicle;
+  marker_namespace_ = std::move(marker_namespace);
   resolution_ = resolution;
   const double front = vehicle_.wheel_base + vehicle_.front_hang;
   vehicle_radius_ = std::hypot(std::max(front, vehicle_.rear_hang),
@@ -61,7 +64,7 @@ void SweptAreaVisualizer::Reset(
 void SweptAreaVisualizer::Clear() {
   if (published_chunk_count_ > 0) {
     VisualizationPlot::ClearMarkers(
-        "trajectory_swept_area", 0,
+        marker_namespace_, 0,
         static_cast<int>(published_chunk_count_ - 1));
   }
   occupied_cells_.clear();
@@ -154,7 +157,7 @@ void SweptAreaVisualizer::QueueDirtyMarkers() {
     }
     VisualizationPlot::PlotGridCells(
         x, y, resolution_, fill, static_cast<int>(index),
-        "trajectory_swept_area", 0.008, 0.01);
+        marker_namespace_, 0.008, 0.01);
   }
   published_chunk_count_ = marker_chunks_.size();
   first_dirty_chunk_ = std::numeric_limits<std::size_t>::max();

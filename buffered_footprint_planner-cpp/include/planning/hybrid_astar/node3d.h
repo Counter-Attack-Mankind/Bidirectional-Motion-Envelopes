@@ -26,8 +26,8 @@
 #include <utility>
 #include <vector>
 
-#include "hybrid_astar/vehicle_parameter.h"
-#include "hybrid_astar/parking_planner_config.h"
+#include "planning/hybrid_astar/vehicle_parameter.h"
+#include "planning/hybrid_astar/parking_planner_config.h"
 #include "common/math/box2d.h"
 
 namespace planning {

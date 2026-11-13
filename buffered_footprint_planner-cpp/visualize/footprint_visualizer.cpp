@@ -34,9 +34,9 @@ void FootprintVisualizer::Update(
   Color fill = outline;
   fill.set_a(0.28);
   VisualizationPlot::PlotFilledPolygon(
-      x, y, fill, 0, "trajectory_footprint_fill", 0.022);
+      x, y, fill, 0, namespace_prefix_ + "_footprint_fill", 0.022);
   VisualizationPlot::PlotPolygon(
-      x, y, 0.012, outline, 0, "trajectory_footprint_outline");
+      x, y, 0.012, outline, 0, namespace_prefix_ + "_footprint_outline");
 
   std::ostringstream text;
   text << std::fixed << std::setprecision(3)
@@ -45,13 +45,13 @@ void FootprintVisualizer::Update(
        << " left=" << interval.left << " right=" << interval.right;
   VisualizationPlot::PlotText(
       center_x, center_y + 0.16, text.str(), 0.055, outline, 0,
-      "trajectory_footprint_scales");
+      namespace_prefix_ + "_footprint_scales");
 }
 
 void FootprintVisualizer::Clear() {
-  VisualizationPlot::ClearMarkers("trajectory_footprint_fill", 0, 0);
-  VisualizationPlot::ClearMarkers("trajectory_footprint_outline", 0, 0);
-  VisualizationPlot::ClearMarkers("trajectory_footprint_scales", 0, 0);
+  VisualizationPlot::ClearMarkers(namespace_prefix_ + "_footprint_fill", 0, 0);
+  VisualizationPlot::ClearMarkers(namespace_prefix_ + "_footprint_outline", 0, 0);
+  VisualizationPlot::ClearMarkers(namespace_prefix_ + "_footprint_scales", 0, 0);
   last_interval_ = static_cast<std::size_t>(-1);
 }
 

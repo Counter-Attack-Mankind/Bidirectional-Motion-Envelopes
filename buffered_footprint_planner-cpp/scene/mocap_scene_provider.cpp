@@ -123,6 +123,10 @@ bool MocapSceneProvider::Initialize(ros::NodeHandle& node,
   node.param("mocap/obstacle_padding", obstacle_padding_, obstacle_padding_);
   node.param("mocap/minimum_obstacle_markers", minimum_obstacle_markers_,
              minimum_obstacle_markers_);
+  node.param("mocap/use_vehicle_rear_marker", use_vehicle_rear_marker_,
+             use_vehicle_rear_marker_);
+  node.param("mocap/allow_empty_obstacles", allow_empty_obstacles_,
+             allow_empty_obstacles_);
   if (!(position_scale_ > 0.0) || !(data_timeout_ > 0.0) ||
       minimum_obstacle_markers_ < 3) {
     ROS_ERROR("Invalid mocap scale, timeout, or minimum marker count");
@@ -142,6 +146,8 @@ void MocapSceneProvider::DiscoverTopics(const ros::TimerEvent&) {
     return;
   }
   const std::regex vehicle_pattern(".*/Vehicle([0-9]+)/pose$");
+  const std::regex vehicle_marker_pattern(
+      ".*/Vehicle([0-9]+)_Marker([0-9]+)/pose$");
   const std::regex obstacle_pattern(
       ".*/Obstacle([0-9]+)_Marker([0-9]+)/pose$");
   std::lock_guard<std::mutex> lock(mutex_);
@@ -150,7 +156,18 @@ void MocapSceneProvider::DiscoverTopics(const ros::TimerEvent&) {
         topic.name.rfind(vrpn_namespace_ + "/", 0) != 0 ||
         subscribers_.count(topic.name)) continue;
     std::smatch match;
-    if (std::regex_match(topic.name, match, vehicle_pattern)) {
+    if (std::regex_match(topic.name, match, vehicle_marker_pattern)) {
+      const int vehicle_id = std::stoi(match[1]);
+      const int marker_id = std::stoi(match[2]);
+      vehicle_markers_[vehicle_id][marker_id];
+      subscribers_[topic.name] = ros::NodeHandle().subscribe<geometry_msgs::PoseStamped>(
+          topic.name, 1, boost::bind(
+              &MocapSceneProvider::VehicleMarkerCallback, this,
+              vehicle_id, marker_id, _1));
+      ++revision_;
+      ROS_INFO("Discovered vehicle %d rear-reference candidate marker %d on %s",
+               vehicle_id, marker_id, topic.name.c_str());
+    } else if (std::regex_match(topic.name, match, vehicle_pattern)) {
       const int id = std::stoi(match[1]);
       vehicles_[id];
       subscribers_[topic.name] = ros::NodeHandle().subscribe<geometry_msgs::PoseStamped>(
@@ -170,6 +187,17 @@ void MocapSceneProvider::DiscoverTopics(const ros::TimerEvent&) {
                marker_id, topic.name.c_str());
     }
   }
+}
+
+void MocapSceneProvider::VehicleMarkerCallback(
+    int vehicle_id, int marker_id,
+    const geometry_msgs::PoseStamped::ConstPtr& message) {
+  if (!message || !FinitePose(*message)) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto& sample = vehicle_markers_[vehicle_id][marker_id];
+  sample.pose = *message;
+  sample.received = ros::Time::now();
+  sample.seen = true;
 }
 
 void MocapSceneProvider::VehicleCallback(
@@ -204,26 +232,51 @@ common::math::Vec2d MocapSceneProvider::TransformPoint(double x,
 }
 
 Pose2d MocapSceneProvider::TransformVehicle(
-    const geometry_msgs::PoseStamped& pose) const {
+    int vehicle_id, const geometry_msgs::PoseStamped& pose,
+    const ros::Time& now) const {
   const auto point = TransformPoint(pose.pose.position.x, pose.pose.position.y);
   const double yaw = common::math::NormalizeAngle(
       tf2::getYaw(pose.pose.orientation) + rotation_ + yaw_offset_);
   const double c = std::cos(yaw);
   const double s = std::sin(yaw);
-  return {point.x() + c * body_to_rear_x_ - s * body_to_rear_y_,
-          point.y() + s * body_to_rear_x_ + c * body_to_rear_y_, yaw};
+  common::math::Vec2d reference = point;
+  if (use_vehicle_rear_marker_) {
+    const auto vehicle = vehicle_markers_.find(vehicle_id);
+    double minimum_projection = std::numeric_limits<double>::infinity();
+    if (vehicle != vehicle_markers_.end()) {
+      for (const auto& marker : vehicle->second) {
+        if (!marker.second.seen ||
+            (now - marker.second.received).toSec() > data_timeout_) continue;
+        const auto candidate = TransformPoint(
+            marker.second.pose.pose.position.x,
+            marker.second.pose.pose.position.y);
+        const double projection = candidate.x() * c + candidate.y() * s;
+        if (projection < minimum_projection) {
+          minimum_projection = projection;
+          reference = candidate;
+        }
+      }
+    }
+  }
+  return {reference.x() + c * body_to_rear_x_ - s * body_to_rear_y_,
+          reference.y() + s * body_to_rear_x_ + c * body_to_rear_y_, yaw};
 }
 
 void MocapSceneProvider::RefreshGeometry(const ros::Time& now) {
   std::lock_guard<std::mutex> lock(mutex_);
   for (auto& entry : obstacles_) {
     std::vector<common::math::Vec2d> points;
+    bool all_markers_fresh = !entry.second.markers.empty();
     for (const auto& marker : entry.second.markers) {
       const auto& sample = marker.second;
-      if (!sample.seen || (now - sample.received).toSec() > data_timeout_) continue;
+      if (!sample.seen || (now - sample.received).toSec() > data_timeout_) {
+        all_markers_fresh = false;
+        continue;
+      }
       points.push_back(TransformPoint(sample.pose.pose.position.x,
                                       sample.pose.pose.position.y));
     }
+    if (!all_markers_fresh) continue;
     if (points.size() < static_cast<std::size_t>(minimum_obstacle_markers_))
       continue;
     const auto hull = ConvexHull(std::move(points));
@@ -263,7 +316,20 @@ MocapSceneProvider::Status MocapSceneProvider::StatusLocked(
   const auto vehicle = vehicles_.find(vehicle_id);
   status.vehicle_fresh = vehicle != vehicles_.end() && vehicle->second.seen &&
       (now - vehicle->second.received).toSec() <= data_timeout_;
-  bool all_fresh = !obstacles_.empty();
+  if (status.vehicle_fresh && use_vehicle_rear_marker_) {
+    bool rear_marker_fresh = false;
+    const auto markers = vehicle_markers_.find(vehicle_id);
+    if (markers != vehicle_markers_.end()) {
+      for (const auto& marker : markers->second) {
+        rear_marker_fresh = rear_marker_fresh ||
+            (marker.second.seen &&
+             (now - marker.second.received).toSec() <= data_timeout_);
+      }
+    }
+    status.vehicle_fresh = rear_marker_fresh;
+  }
+  bool all_fresh = allow_empty_obstacles_ && obstacles_.empty();
+  if (!obstacles_.empty()) all_fresh = true;
   for (const auto& obstacle : obstacles_) {
     all_fresh = all_fresh && obstacle.second.has_geometry &&
         (now - obstacle.second.last_geometry_time).toSec() <= data_timeout_;
@@ -276,8 +342,9 @@ MocapSceneProvider::Status MocapSceneProvider::StatusLocked(
       "multiple fresh VehicleN topics found; exactly one vehicle is required";
   else if (vehicle_id < 0) status.message = "vehicle pose is stale";
   else if (!status.vehicle_fresh) status.message = "vehicle pose is stale";
-  else if (obstacles_.empty()) status.message =
-      "waiting for ObstacleN_MarkerM topics";
+  else if (obstacles_.empty()) status.message = allow_empty_obstacles_
+      ? "confirmed obstacle-free mocap scene"
+      : "waiting for ObstacleN_MarkerM topics";
   else if (!status.obstacles_fresh) {
     bool beyond_retention = false;
     for (const auto& obstacle : obstacles_) {
@@ -309,7 +376,8 @@ bool MocapSceneProvider::Snapshot(SceneSnapshot* snapshot,
   *snapshot = static_scene_;
   const auto vehicle = vehicles_.find(current.vehicle_id);
   if (vehicle != vehicles_.end() && vehicle->second.seen)
-    snapshot->start = TransformVehicle(vehicle->second.pose);
+    snapshot->start = TransformVehicle(current.vehicle_id,
+                                       vehicle->second.pose, now);
   snapshot->obstacles.clear();
   for (const auto& obstacle : obstacles_) {
     if (!obstacle.second.has_geometry) continue;

@@ -3,7 +3,7 @@
 #include <array>
 #include <string>
 
-#include "hybrid_astar/vehicle_parameter.h"
+#include "planning/hybrid_astar/vehicle_parameter.h"
 #include "optimizer/trajectory.h"
 
 namespace optimizer {

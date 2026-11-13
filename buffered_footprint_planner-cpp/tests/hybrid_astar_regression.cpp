@@ -4,7 +4,7 @@
 #include <cmath>
 #include <memory>
 
-#include "hybrid_astar/hybrid_a_star.h"
+#include "planning/hybrid_astar/hybrid_a_star.h"
 
 int main() {
   VehicleParameter vehicle;

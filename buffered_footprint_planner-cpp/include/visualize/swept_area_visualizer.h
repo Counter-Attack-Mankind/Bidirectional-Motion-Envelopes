@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "common/math/vec2d.h"
-#include "hybrid_astar/vehicle_parameter.h"
+#include "planning/hybrid_astar/vehicle_parameter.h"
 #include "optimizer/trajectory.h"
 
 namespace visualization {
@@ -16,7 +16,8 @@ namespace visualization {
 class SweptAreaVisualizer {
  public:
   bool Initialize(const VehicleParameter& vehicle, double resolution,
-                  std::string* error);
+                  std::string* error,
+                  std::string marker_namespace = "trajectory_swept_area");
   void Update(const optimizer::TrajectoryNode& pose);
   void UpdateAlongTrajectory(const optimizer::Trajectory& trajectory,
                              std::size_t previous_interval,
@@ -48,6 +49,7 @@ class SweptAreaVisualizer {
   std::size_t first_dirty_chunk_ = std::numeric_limits<std::size_t>::max();
   std::size_t published_chunk_count_ = 0;
   std::size_t raster_sample_count_ = 0;
+  std::string marker_namespace_ = "trajectory_swept_area";
 };
 
 }  // namespace visualization

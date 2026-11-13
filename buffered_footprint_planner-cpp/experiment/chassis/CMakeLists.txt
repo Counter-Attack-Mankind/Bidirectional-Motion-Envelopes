@@ -45,6 +45,7 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 add_executable(${PROJECT_NAME}_node src/chassis_node.cpp)
+add_executable(chassis_command_guard_node src/chassis_command_guard.cpp)
 add_executable(steering_limit_calibration_node
   src/steering_limit_calibration_node.cpp)
 
@@ -57,6 +58,8 @@ add_executable(steering_limit_calibration_node
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(chassis_command_guard_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(steering_limit_calibration_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
@@ -69,3 +72,4 @@ add_dependencies(steering_limit_calibration_node
 target_link_libraries(steering_limit_calibration_node
   ${catkin_LIBRARIES}
 )
+target_link_libraries(chassis_command_guard_node ${catkin_LIBRARIES})

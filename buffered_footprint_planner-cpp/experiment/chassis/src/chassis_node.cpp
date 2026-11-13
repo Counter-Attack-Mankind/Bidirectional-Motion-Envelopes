@@ -6,16 +6,10 @@
 #include <sandbox_msgs/ChassisCommand.h>
 #include <hal/tiny_serial.h>
 #include <TinyProtocol.h>
-#include <algorithm>
 #include <thread>
 #include <functional>
 
 ros::Publisher *velocity_publisher_;
-double chassis_max_steer_angle_ = 0.50;
-double command_timeout_ = 0.30;
-ros::WallTime last_command_time_;
-bool command_seen_ = false;
-int last_target_ = 0;
 
 #define MSG_TYPE_TWIST 0xe1
 #define MSG_TYPE_PID 0xe2
@@ -65,13 +59,8 @@ tiny_serial_handle_t port_handle;
 Tiny::ProtoLight proto;
 
 void cmd_vel_cb(const sandbox_msgs::ChassisCommandConstPtr &msg) {
-  // Chassis uses the final physical safety boundary; Planner and PP are stricter.
-  // 油门 = max_speed 0.26m/s ×100 = 26。否则最紧弯/最高速跟不上规划轨迹。
-  const double steering_rad = std::max(
-      -chassis_max_steer_angle_,
-      std::min(chassis_max_steer_angle_, -msg->steering));
-  double steering = steering_rad / M_PI * 180.0;
-  double throttle = std::max(std::min(msg->throttle * 100, 26.0), -26.0);
+  double steering = std::max(std::min(-msg->steering / M_PI * 180, 25.0), -25.0);
+  double throttle = std::max(std::min(msg->throttle * 100, 25.0), -25.0);
   TwistMessage twist = {
       int16_t (throttle),
       int16_t (steering),
@@ -80,27 +69,6 @@ void cmd_vel_cb(const sandbox_msgs::ChassisCommandConstPtr &msg) {
   byte buf[100] = { 0 };
   int16_t size = generate_message((unsigned char)msg->target, MSG_TYPE_TWIST, (byte *)&twist, sizeof(TwistMessage), buf);
   proto.write(reinterpret_cast<char *>(buf), size);
-  last_command_time_ = ros::WallTime::now();
-  command_seen_ = true;
-  last_target_ = msg->target;
-}
-
-void send_zero_command(int target) {
-  const TwistMessage twist = {0, 0};
-  byte buf[100] = {0};
-  const int16_t size = generate_message(
-      static_cast<unsigned char>(target), MSG_TYPE_TWIST,
-      reinterpret_cast<const byte *>(&twist), sizeof(TwistMessage), buf);
-  proto.write(reinterpret_cast<char *>(buf), size);
-}
-
-void watchdog_cb(const ros::WallTimerEvent &) {
-  if(!command_seen_) return;
-  if((ros::WallTime::now() - last_command_time_).toSec() <= command_timeout_)
-    return;
-  send_zero_command(last_target_);
-  command_seen_ = false;
-  ROS_ERROR("[chassis] command timeout; transmitted zero throttle");
 }
 
 int serial_send_fd(void *p, const void *buf, int len) {
@@ -115,13 +83,8 @@ int main(int argc, char **argv) {
   ros::init(argc, argv, "chassis_node");
   ros::NodeHandle nh;
   ros::NodeHandle pnh("~");
-  pnh.param("chassis_max_steer_angle", chassis_max_steer_angle_,
-            chassis_max_steer_angle_);
-  pnh.param("command_timeout", command_timeout_, command_timeout_);
   std::string serial_port = "/dev/ttyUSB0";
   pnh.param<std::string>("serial_port", serial_port, serial_port);
-  chassis_max_steer_angle_ = std::max(0.0, chassis_max_steer_angle_);
-  ROS_INFO("[chassis] max steering angle: %.3f rad", chassis_max_steer_angle_);
 
   // port, baudrate, timeout in milliseconds
   port_handle = tiny_serial_open(serial_port.c_str(), 57600);
@@ -146,13 +109,10 @@ int main(int argc, char **argv) {
   }, std::ref(proto));
 
   ros::Subscriber cmd_subscriber = nh.subscribe("/chassis", 10, cmd_vel_cb);
-  ros::WallTimer watchdog = nh.createWallTimer(
-      ros::WallDuration(0.05), watchdog_cb);
   ros::Publisher vel_publisher = nh.advertise<std_msgs::Float64>("/velocity", 1, false);
   velocity_publisher_ = &vel_publisher;
 
   ros::spin();
-  send_zero_command(last_target_);
   is_terminate = true;
   rx_thread.join();
   proto.end();

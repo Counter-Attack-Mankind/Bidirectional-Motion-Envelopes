@@ -279,6 +279,7 @@ public:
     require_velocity_for_reached_ = node_handle_.param(
         "require_velocity_for_reached", require_velocity_for_reached_);
     final_stop_speed_ = node_handle_.param("final_stop_speed", final_stop_speed_);
+    velocity_timeout_ = node_handle_.param("velocity_timeout", velocity_timeout_);
 
     // Per-vehicle PP gains are loaded under /controller_<target> from
     // vehicle_controller_gains.yaml. The private NodeHandle reads that namespace.
@@ -363,6 +364,9 @@ private:
   bool cusp_stop_hold_ = false;
   bool velocity_seen_ = false;
   double measured_velocity_ = 0.0;
+  double estimated_velocity_ = 0.0;
+  double velocity_timeout_ = 0.30;
+  ros::Time last_velocity_time_;
   double cusp_stop_speed_ = 0.02;
   bool require_velocity_for_reached_ = false;
   double final_stop_speed_ = 0.02;
@@ -457,6 +461,16 @@ private:
     if(!msg || !std::isfinite(msg->data)) return;
     measured_velocity_ = msg->data;
     velocity_seen_ = true;
+    last_velocity_time_ = ros::Time::now();
+  }
+
+  double actual_speed() const {
+    const ros::Time now = ros::Time::now();
+    if(velocity_seen_ && !last_velocity_time_.isZero() &&
+       (now - last_velocity_time_).toSec() <= velocity_timeout_) {
+      return fabs(measured_velocity_);
+    }
+    return fabs(estimated_velocity_);
   }
 
   void object_callback(const AprilObjectConstPtr &msg) {
@@ -472,6 +486,17 @@ private:
           ROS_WARN_THROTTLE(1.0, "[PP] rejected %.3f m localization jump", distance);
           return;
         }
+      }
+      if(object_seen_ && !history_stale) {
+        const double dt = (now - last_object_time_).toSec();
+        if(dt > 1e-3) {
+          const double sample = hypot(new_x - object_.x, new_y - object_.y) / dt;
+          // Mocap finite-difference speed is only a stop detector fallback.
+          // A light low-pass filter avoids declaring motion from frame jitter.
+          estimated_velocity_ = 0.65 * estimated_velocity_ + 0.35 * sample;
+        }
+      } else {
+        estimated_velocity_ = 0.0;
       }
       object_ = *msg;
       object_.x = new_x;
@@ -866,7 +891,7 @@ private:
 
       // 位置和航向必须连续多个控制周期同时满足，避免定位抖动造成误到达。
       const bool stopped = !require_velocity_for_reached_ ||
-          (velocity_seen_ && fabs(measured_velocity_) <= final_stop_speed_);
+          actual_speed() <= final_stop_speed_;
       if(fabs(e_lon) <= final_lon_tolerance_ &&
          fabs(e_lat) <= final_lat_tolerance_ &&
          fabs(e_yaw) <= final_yaw_tolerance_ && stopped) {
@@ -891,8 +916,7 @@ private:
     const bool projection_at_cusp =
         projected_index >= std::max(start, end - 2);
     if(projection_at_cusp && approaching_distance <= approaching_tolerance_) {
-        if(require_stop_at_cusp_ &&
-           (!velocity_seen_ || fabs(measured_velocity_) > cusp_stop_speed_)) {
+        if(require_stop_at_cusp_ && actual_speed() > cusp_stop_speed_) {
           cusp_stop_hold_ = true;
           return;
         }

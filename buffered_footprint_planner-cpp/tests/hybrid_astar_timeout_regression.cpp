@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "hybrid_astar/hybrid_a_star.h"
+#include "planning/hybrid_astar/hybrid_a_star.h"
 
 int main() {
   ParkingPlannerConfig config;

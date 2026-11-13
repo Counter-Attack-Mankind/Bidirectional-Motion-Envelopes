@@ -51,7 +51,8 @@ roslaunch buffered_footprint_planner real_vehicle.launch \
   server:=NOKOV_IP enable_execution:=true serial_port:=/dev/ttyUSB0
 ```
 
-Nokov names must be `VehicleN` for the vehicle rigid body and
+Nokov names must be `VehicleN` for the vehicle rigid body,
+`VehicleN_MarkerM` for rear-axle reference candidates, and
 `ObstacleN_MarkerM` for each obstacle marker (`N` and `M` are decimal IDs).
 At least three fresh, non-collinear markers are required per obstacle. Tracker
 topics may appear after startup; the provider rescans continuously.
@@ -73,6 +74,7 @@ rostopic echo /reached
 Confirm `position_scale`, map rotation/translation, yaw offset, rigid-body to
 rear-axle translation, obstacle padding, steering sign/limit and serial device
 on site. Software stop logic is not a substitute for a physical emergency stop.
-Flash the updated `experiment/chassis/main.ino` before powered driving: it adds
-the MCU-side 350 ms command watchdog. Until that firmware is installed, only the
-ROS-side chassis watchdog is active.
+The Arduino firmware and the original chassis conversion/protocol are unchanged;
+no firmware flashing is required. The independent ROS
+`chassis_command_guard_node` applies estop and command-timeout protection before
+commands reach the unchanged chassis node.

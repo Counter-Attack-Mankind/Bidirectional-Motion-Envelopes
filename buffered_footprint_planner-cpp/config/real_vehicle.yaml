@@ -32,13 +32,24 @@ mocap:
   geometry_retention: 2.0
   obstacle_padding: 0.0
   minimum_obstacle_markers: 3
+  # Old fork_planner localization chooses the rearmost VehicleN_MarkerM along
+  # the VehicleN rigid-body heading as the rear-axle reference.
+  use_vehicle_rear_marker: true
+  # Set true only after explicitly confirming an obstacle-free test scene.
+  allow_empty_obstacles: false
 experiment:
   stationary_duration: 3.0
-  position_threshold: 0.002
-  yaw_threshold: 0.0087266463
-  scene_position_threshold: 0.015
-  scene_yaw_threshold: 0.034906585
+  vehicle_stationary_position_threshold: 0.002
+  vehicle_stationary_yaw_threshold: 0.0087266463
+  obstacle_stationary_boundary_threshold: 0.002
+  # Frozen-scene thresholds are deliberately below optimizer dmin=0.010 m.
+  frozen_vehicle_position_threshold: 0.003
+  frozen_vehicle_yaw_threshold: 0.0087266463
+  frozen_obstacle_boundary_threshold: 0.003
   rearm_distance: 0.10
 
 visualization:
   show_hybrid_search: true
+  playback_speed: 1.0
+  playback_frequency: 100.0
+  swept_area_resolution: 0.005
