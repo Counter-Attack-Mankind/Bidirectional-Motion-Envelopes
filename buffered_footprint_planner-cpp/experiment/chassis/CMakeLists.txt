@@ -45,6 +45,7 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 add_executable(${PROJECT_NAME}_node src/chassis_node.cpp)
+target_compile_options(${PROJECT_NAME}_node PRIVATE -O0 -UNDEBUG)
 add_executable(chassis_command_guard_node src/chassis_command_guard.cpp)
 add_executable(steering_limit_calibration_node
   src/steering_limit_calibration_node.cpp)
