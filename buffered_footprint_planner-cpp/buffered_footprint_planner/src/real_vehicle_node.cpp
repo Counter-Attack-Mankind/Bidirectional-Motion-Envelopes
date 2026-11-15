@@ -1,5 +1,6 @@
 #include <atomic>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -171,6 +172,30 @@ class RealVehicleNode {
     object_publisher_.publish(object);
   }
 
+  void PublishObstacles(const scene::SceneSnapshot& snapshot) {
+    const ros::Time stamp = ros::Time::now();
+    for (const auto& obstacle : snapshot.obstacles) {
+      sandbox_msgs::AprilObject object;
+      object.header.stamp = stamp;
+      object.header.frame_id = snapshot.frame_id;
+      object.type = sandbox_msgs::AprilObject::OBSTACLE;
+      // Mocap rigid-body names are stable, whereas vector order is not a safe
+      // identity when one body is temporarily hidden.
+      object.id = static_cast<int>(
+          std::hash<std::string>{}(obstacle.id) & 0x7fffffffU);
+      object.x = obstacle.x;
+      object.y = obstacle.y;
+      object.yaw = obstacle.yaw;
+      for (const auto& corner : obstacle.polygon().points()) {
+        geometry_msgs::Point32 point;
+        point.x = corner.x();
+        point.y = corner.y();
+        object.polygon.points.push_back(point);
+      }
+      object_publisher_.publish(object);
+    }
+  }
+
   void CommandCallback(
       const sandbox_msgs::ChassisCommand::ConstPtr& message) {
     if (!message || message->target != planned_vehicle_id_ ||
@@ -336,6 +361,7 @@ class RealVehicleNode {
     latest_scene_ = snapshot;
     active_vehicle_id_ = status.vehicle_id;
     PublishVehicle(status, snapshot);
+    PublishObstacles(snapshot);
     manager_.Observe(snapshot, ready, status.revision, ros::WallTime::now().toSec());
 
     visualizer_.QueueMap(snapshot);

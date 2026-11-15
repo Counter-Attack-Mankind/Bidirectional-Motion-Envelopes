@@ -1,28 +1,57 @@
-lfw : 0.0
-lrv : 0.0
-wheel_base : 0.143
-approaching_tolerance : 0.04
-final_approaching_tolerance : 0.02
+# Continuous projection and nonuniform-time reference coordination (10 Hz).
+projection_backward_window: 0.02
+projection_forward_window: 0.35
+reference_time_lead: 0.50
 
-# 末端位姿到达判定（目标坐标系）
-final_lon_tolerance : 0.02       # m，纵向误差
-final_lat_tolerance : 0.015      # m，横向误差
-final_yaw_tolerance : 0.0872665  # rad，约 5 deg
-final_stable_cycles : 5          # 连续满足次数，控制周期当前为 0.1 s
+# Pure pursuit. Tracking limits retain correction margin over planner limits,
+# while remaining below the configured chassis physical limits.
+lookahead_distance_min: 0.10
+lookahead_distance_max: 0.15
+lookahead_distance_ratio: 0.8
+lookahead_scale: 1.0
+pp_max_steer_angle: 0.60
+tracking_max_forward_speed: 0.26
+tracking_max_reverse_speed: 0.21
+tracking_max_acceleration: 0.15
+tracking_max_deceleration: 0.25
+tracking_max_steering_rate: 0.45
 
-# 末段控制：虚拟点只用于 PP 横向控制，纵向 PI 仍跟踪真实终点
-terminal_lookahead_extension : 0.12  # m，沿末段实际行驶方向延长
-terminal_slowdown_distance : 0.20    # m，进入末端限速区的距离
-terminal_max_speed : 0.08            # m/s，末端纵向速度上限
-control_dt : 0.01
-lookahead_distance_min : 0.10
-lookahead_distance_max : 0.15
-lookahead_distance_ratio : 0.8
-pp_max_steer_angle : 0.60  # rad, PP control correction boundary
-v_lookahead_lb : 0.125
-v_lookahead_ub : 0.25
-v_min : -0.26
-v_max : 0.26
+# Signed reference-speed feedforward plus longitudinal PI correction.
+velocity_feedforward_gain: 1.0
+longitude_kp: 2.0
+longitude_ki: 0.10
+longitude_integral_limit: 0.15
+minimum_effective_speed: 0.03
 
-# Debug CSV logs for tuning PP gains.
-debug_log_enable : true
+# Cusp state machine: approach -> brake -> confirmed stop -> next segment.
+cusp_approach_distance: 0.15
+cusp_position_tolerance: 0.035
+cusp_yaw_tolerance: 0.12
+cusp_stop_speed: 0.02
+cusp_stop_cycles: 3
+cusp_timeout: 10.0
+
+# Terminal convergence and chassis low-speed quantization handling.
+final_lon_tolerance: 0.02
+final_lat_tolerance: 0.015
+final_yaw_tolerance: 0.0872665
+final_stop_speed: 0.02
+final_stable_cycles: 5
+terminal_lookahead_extension: 0.12
+terminal_slowdown_distance: 0.20
+terminal_max_speed: 0.08
+
+# Locked-failure guards. Emergency stop bypasses normal command slew limits.
+localization_jump_threshold: 0.50
+velocity_timeout: 0.30
+max_lateral_error: 0.25
+max_yaw_error: 1.05
+max_projection_distance: 0.30
+obstacle_emergency_distance: 0.03
+obstacle_timeout: 0.50
+progress_stagnation_timeout: 4.0
+progress_stagnation_distance: 0.01
+tracking_timeout_scale: 2.0
+tracking_timeout_margin: 15.0
+
+debug_log_enable: true

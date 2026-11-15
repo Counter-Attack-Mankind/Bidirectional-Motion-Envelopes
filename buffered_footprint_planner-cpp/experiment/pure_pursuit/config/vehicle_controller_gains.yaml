@@ -5,6 +5,9 @@
   #--------------------------------------------------------
   # 若车明显落后参考轨迹，则增大kp，若车冲过头则减小kp
   #--------------------------------------------------------
+# Per-vehicle values are commissioning starting points. The controller loads
+# /controller_N after automatic ID binding. Retune longitudinal gains on the
+# real vehicle after enabling velocity feedforward.
 controller_0:  #changed
   K_e: 15.0
   K_yaw: 1.8

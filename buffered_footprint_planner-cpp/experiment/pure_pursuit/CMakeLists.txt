@@ -46,7 +46,8 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-add_executable(${PROJECT_NAME}_node src/pure_pursuit.cpp)
+add_library(pure_pursuit_tracking_core src/tracking_core.cpp)
+add_executable(${PROJECT_NAME}_node src/tracking_controller.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
@@ -54,5 +55,17 @@ add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catk
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(${PROJECT_NAME}_node
+ pure_pursuit_tracking_core
  ${catkin_LIBRARIES}
 )
+
+if(CATKIN_ENABLE_TESTING)
+  add_executable(tracking_core_test test/tracking_core_test.cpp)
+  target_compile_options(tracking_core_test PRIVATE -UNDEBUG)
+  target_link_libraries(tracking_core_test pure_pursuit_tracking_core)
+  add_test(NAME pure_pursuit_tracking_core COMMAND tracking_core_test)
+  add_custom_target(run_tests_pure_pursuit
+    COMMAND $<TARGET_FILE:tracking_core_test>
+    DEPENDS tracking_core_test
+    COMMENT "Running pure_pursuit tracking core regression tests")
+endif()

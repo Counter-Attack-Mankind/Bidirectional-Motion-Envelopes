@@ -39,6 +39,10 @@
          /chassis/chassis_max_steer_angle from the verified gains file. -->
     <rosparam command="load"
               file="$(find chassis)/config/vehicle_chassis_gains.yaml"/>
+    <!-- Loaded globally because /controller_N is selected only after the
+         vehicle ID arrives in the one-shot trajectory message. -->
+    <rosparam command="load"
+              file="$(find pure_pursuit)/config/vehicle_controller_gains.yaml"/>
     <node pkg="pure_pursuit" type="pure_pursuit_node"
           name="pure_pursuit_real_vehicle" output="screen" required="true">
       <remap from="/chassis" to="/chassis_raw"/>
