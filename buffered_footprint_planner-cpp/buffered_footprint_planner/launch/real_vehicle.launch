@@ -1,5 +1,5 @@
 <launch>
-  <arg name="server" default="localhost"/>
+  <arg name="server" default="10.1.1.198"/>
   <arg name="port" default="3883"/>
   <arg name="enable_execution" default="false"/>
   <arg name="launch_rviz" default="true"/>
