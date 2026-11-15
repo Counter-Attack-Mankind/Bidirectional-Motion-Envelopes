@@ -25,11 +25,11 @@ int main() {
   sandbox_msgs::Trajectory message;
   std::string error;
   assert(execution::TrajectoryAdapter::Convert(
-      trajectory, 7, 42, "/tmp/task42", 0.01, 3, &message, &error));
+      trajectory, 7, 42, "/tmp/task42", 3, &message, &error));
   assert(message.target == 7);
-  assert(message.header.seq == 42);
+  assert(message.task_id == 42);
+  assert(message.header.seq == 0);
   assert(message.result_directory == "/tmp/task42");
-  assert(std::abs(message.obstacle_clearance - 0.01) < 1e-12);
   assert(message.obstacle_count == 3);
   assert(message.points.size() == 3);
   assert(std::abs(message.points[0].time) < 1e-12);
@@ -39,6 +39,12 @@ int main() {
   assert(message.points[0].gear == 1);
   assert(message.points[1].gear == -1);
   assert(message.points[2].gear == -1);
+
+  sandbox_msgs::Trajectory next_message;
+  assert(execution::TrajectoryAdapter::Convert(
+      trajectory, 7, 43, "/tmp/task43", 3, &next_message, &error));
+  assert(next_message.task_id == 43);
+  assert(next_message.result_directory == "/tmp/task43");
 
   trajectory.intervals[1].dt = 0.0;
   assert(!execution::TrajectoryAdapter::Validate(trajectory, &error));

@@ -394,7 +394,7 @@ class TrackingController {
     if (!message || message->points.size() < 2) return;
     if (auto_target_ && !target_bound_) BindTarget(message->target);
     if (!target_bound_ || message->target != tracking_object_) return;
-    const int incoming_task = static_cast<int>(message->header.seq);
+    const int incoming_task = static_cast<int>(message->task_id);
     if (incoming_task <= last_accepted_task_) {
       ROS_WARN("[PP] ignored duplicate/stale trajectory task=%d Vehicle%d; "
                "last=%d", incoming_task, message->target,
@@ -405,7 +405,6 @@ class TrackingController {
     last_accepted_task_ = incoming_task;
     result_directory_ = message->result_directory;
     expected_obstacles_ = std::max(0, message->obstacle_count);
-    emergency_distance_ = std::max(0.0, message->obstacle_clearance);
     trajectory_validated_ = false;
     InitializeLogs();
     PublishStatus(sandbox_msgs::TrackingStatus::PREPARING,
@@ -483,8 +482,8 @@ class TrackingController {
       minimum_clearance_ = std::min(minimum_clearance_,
           pure_pursuit::PolygonDistance(footprint, item.second.polygon));
     }
-    if (minimum_clearance_ + 1e-4 < emergency_distance_) {
-      Fail("vehicle footprint violated obstacle emergency distance");
+    if (minimum_clearance_ <= 1e-9) {
+      Fail("actual vehicle footprint overlaps an obstacle");
       return false;
     }
     if (std::abs(SignedVelocity()) > 0.03 && SignedVelocity() * Gear() < 0.0) {
@@ -820,7 +819,7 @@ class TrackingController {
                  << "longitude_ki: " << longitude_ki_ << '\n'
                  << "velocity_feedforward_gain: " << feedforward_gain_ << '\n'
                  << "lookahead_scale: " << lookahead_scale_ << '\n'
-                 << "planning_obstacle_clearance: " << emergency_distance_ << '\n';
+                 << "collision_stop_condition: footprint_overlap\n";
     ROS_WARN("[PP] task=%d Vehicle%d logs=%s", task_id_, tracking_object_,
              result_directory_.c_str());
   }
@@ -899,7 +898,7 @@ class TrackingController {
   double max_deceleration_ = 0.25, max_steering_rate_ = 0.45;
   double minimum_effective_speed_ = 0.03;
   double max_lateral_error_ = 0.25, max_yaw_error_ = 1.05;
-  double max_projection_distance_ = 0.30, emergency_distance_ = 0.03;
+  double max_projection_distance_ = 0.30;
   double obstacle_timeout_ = 0.50, stagnation_timeout_ = 4.0;
   double stagnation_distance_ = 0.01, timeout_scale_ = 2.0;
   double timeout_margin_ = 15.0;

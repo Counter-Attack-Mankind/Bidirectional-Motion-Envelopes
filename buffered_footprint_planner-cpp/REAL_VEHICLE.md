@@ -276,6 +276,12 @@ Task 12 Vehicle5 planning stage=0 state=1: Hybrid A* succeeded
 [PP] task=12 Vehicle5 reached terminal pose
 ```
 
-实时足迹距离仍记录并检查，但停止阈值直接使用该任务规划配置中的 `dmin`，不再
-另设 PP 3 cm 阈值。`dmin` 是规划几何约束，不代表已经完成实车制动距离验证；
-物理急停、定位保护和跟踪异常保护仍然独立有效。
+实时足迹最小距离仍逐周期记录，但不会仅因距离小于规划 `dmin` 判定跟踪失败；
+PP 不再维护额外的固定避障距离。实际矩形足迹已经相交或接触时仍触发碰撞停车，
+物理急停、定位保护和跟踪异常保护继续独立有效。Hybrid A*、BME/OBCA 的避障
+约束及规划后的连续碰撞验证不变。
+
+`Trajectory.task_id` 是唯一业务任务号，`header.seq` 固定为零且不参与判断。场景
+每次重新静止并锁定后，实验管理器生成递增 task ID；PP 只接受更新的 task ID，
+并重新初始化弧长进度、参考时间、运动段、积分项和命令历史。所有成功、失败和
+换段反馈必须同时匹配 task ID、Vehicle ID 与结果目录。

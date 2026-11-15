@@ -38,7 +38,7 @@ bool TrajectoryAdapter::Validate(const optimizer::Trajectory& trajectory,
 bool TrajectoryAdapter::Convert(const optimizer::Trajectory& trajectory,
                                 int vehicle_id, std::uint32_t task_id,
                                 const std::string& result_directory,
-                                double obstacle_clearance, int obstacle_count,
+                                int obstacle_count,
                                 sandbox_msgs::Trajectory* message,
                                 std::string* error) {
   if (!message) {
@@ -47,11 +47,11 @@ bool TrajectoryAdapter::Convert(const optimizer::Trajectory& trajectory,
   }
   if (vehicle_id < 0 || !Validate(trajectory, error)) return false;
   message->header.stamp = ros::Time::now();
+  message->header.seq = 0;  // Never use transport metadata as business identity.
   message->header.frame_id = "map";
-  message->header.seq = task_id;
   message->target = vehicle_id;
+  message->task_id = task_id;
   message->result_directory = result_directory;
-  message->obstacle_clearance = obstacle_clearance;
   message->obstacle_count = obstacle_count;
   message->points.clear();
   message->points.reserve(trajectory.nodes.size());

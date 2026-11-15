@@ -404,7 +404,7 @@ class RealVehicleNode {
     if (!execution::TrajectoryAdapter::Convert(
             result->optimization.trajectory, active_vehicle_id_,
             static_cast<std::uint32_t>(manager_.task_id()),
-            result->result_directory, configuration_.nlp.dmin,
+            result->result_directory,
             static_cast<int>(latest_scene_.obstacles.size()), &trajectory,
             &error)) {
       PublishEstop(true);
@@ -425,7 +425,7 @@ class RealVehicleNode {
                 error.c_str());
     PublishEstop(false);
     ROS_WARN("Published task %u once to /traj for vehicle %d; vehicle motion is enabled",
-             trajectory.header.seq, active_vehicle_id_);
+             trajectory.task_id, active_vehicle_id_);
   }
 
   void Tick(const ros::TimerEvent&) {
