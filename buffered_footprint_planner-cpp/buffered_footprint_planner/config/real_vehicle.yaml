@@ -4,14 +4,14 @@ frame_id: map
 
 map:
   x_min: 0.0
-  x_max: 4.5
+  x_max: 2.5
   y_min: 0.0
-  y_max: 2.5
+  y_max: 4.5
 
 goal:
-  x: 4.00
-  y: 1.25
-  yaw: -3.141592653589793
+  x: 1.25
+  y: 4.0
+  yaw: -1.570796
 
 obstacles: []
 
