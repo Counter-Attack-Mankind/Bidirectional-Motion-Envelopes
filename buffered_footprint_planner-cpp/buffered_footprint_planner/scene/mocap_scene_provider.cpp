@@ -21,8 +21,24 @@ using boost::placeholders::_1;
 bool FinitePose(const geometry_msgs::PoseStamped& pose) {
   const auto& p = pose.pose.position;
   const auto& q = pose.pose.orientation;
-  return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(q.x) &&
-         std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(q.w);
+  const double quaternion_norm_squared =
+      q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+  return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z) &&
+         std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) &&
+         std::isfinite(q.w) && std::isfinite(quaternion_norm_squared) &&
+         quaternion_norm_squared > 1e-12;
+}
+
+double PoseYaw(const geometry_msgs::PoseStamped& pose) {
+  auto quaternion = pose.pose.orientation;
+  const double norm = std::sqrt(
+      quaternion.x * quaternion.x + quaternion.y * quaternion.y +
+      quaternion.z * quaternion.z + quaternion.w * quaternion.w);
+  quaternion.x /= norm;
+  quaternion.y /= norm;
+  quaternion.z /= norm;
+  quaternion.w /= norm;
+  return tf2::getYaw(quaternion);
 }
 
 SceneObstacle MinimumAreaObb(const std::string& id,
@@ -121,15 +137,38 @@ bool MocapSceneProvider::Initialize(ros::NodeHandle& node,
   node.param("mocap/geometry_retention", geometry_retention_,
              geometry_retention_);
   node.param("mocap/obstacle_padding", obstacle_padding_, obstacle_padding_);
+  node.param("mocap/obstacle_geometry_mode", obstacle_geometry_mode_,
+             obstacle_geometry_mode_);
+  node.param("mocap/obstacle_length", obstacle_length_, obstacle_length_);
+  node.param("mocap/obstacle_width", obstacle_width_, obstacle_width_);
+  node.param("mocap/obstacle_center_offset_x", obstacle_center_offset_x_,
+             obstacle_center_offset_x_);
+  node.param("mocap/obstacle_center_offset_y", obstacle_center_offset_y_,
+             obstacle_center_offset_y_);
+  node.param("mocap/obstacle_yaw_offset", obstacle_yaw_offset_,
+             obstacle_yaw_offset_);
   node.param("mocap/minimum_obstacle_markers", minimum_obstacle_markers_,
              minimum_obstacle_markers_);
   node.param("mocap/use_vehicle_rear_marker", use_vehicle_rear_marker_,
              use_vehicle_rear_marker_);
   node.param("mocap/allow_empty_obstacles", allow_empty_obstacles_,
              allow_empty_obstacles_);
+  if (obstacle_geometry_mode_ != "rigid_body" &&
+      obstacle_geometry_mode_ != "marker_obb") {
+    ROS_ERROR("mocap/obstacle_geometry_mode must be 'rigid_body' or "
+              "'marker_obb', got '%s'", obstacle_geometry_mode_.c_str());
+    return false;
+  }
   if (!(position_scale_ > 0.0) || !(data_timeout_ > 0.0) ||
-      minimum_obstacle_markers_ < 3) {
-    ROS_ERROR("Invalid mocap scale, timeout, or minimum marker count");
+      (obstacle_geometry_mode_ == "marker_obb" &&
+       minimum_obstacle_markers_ < 3) ||
+      (obstacle_geometry_mode_ == "rigid_body" &&
+       (!(obstacle_length_ > 0.0) || !std::isfinite(obstacle_length_) ||
+        !(obstacle_width_ > 0.0) || !std::isfinite(obstacle_width_) ||
+        !std::isfinite(obstacle_center_offset_x_) ||
+        !std::isfinite(obstacle_center_offset_y_) ||
+        !std::isfinite(obstacle_yaw_offset_)))) {
+    ROS_ERROR("Invalid mocap scale, timeout, or obstacle geometry parameters");
     return false;
   }
   discovery_timer_ = node.createTimer(ros::Duration(0.5),
@@ -150,6 +189,8 @@ void MocapSceneProvider::DiscoverTopics(const ros::TimerEvent&) {
       ".*/Vehicle([0-9]+)_Marker([0-9]+)/pose$");
   const std::regex obstacle_pattern(
       ".*/Obstacle([0-9]+)_Marker([0-9]+)/pose$");
+  const std::regex obstacle_body_pattern(
+      ".*/(Obstacle|Obs)([0-9]+)/pose$");
   std::lock_guard<std::mutex> lock(mutex_);
   for (const auto& topic : topics) {
     if (topic.datatype != "geometry_msgs/PoseStamped" ||
@@ -175,7 +216,20 @@ void MocapSceneProvider::DiscoverTopics(const ros::TimerEvent&) {
                                     this, id, _1));
       ++revision_;
       ROS_INFO("Discovered mocap vehicle %d on %s", id, topic.name.c_str());
-    } else if (std::regex_match(topic.name, match, obstacle_pattern)) {
+    } else if (obstacle_geometry_mode_ == "rigid_body" &&
+               std::regex_match(topic.name, match, obstacle_body_pattern)) {
+      const int obstacle_id = std::stoi(match[2]);
+      obstacles_[obstacle_id];
+      subscribers_[topic.name] =
+          ros::NodeHandle().subscribe<geometry_msgs::PoseStamped>(
+              topic.name, 1,
+              boost::bind(&MocapSceneProvider::ObstacleCallback, this,
+                          obstacle_id, _1));
+      ++revision_;
+      ROS_INFO("Discovered obstacle %d rigid body on %s", obstacle_id,
+               topic.name.c_str());
+    } else if (obstacle_geometry_mode_ == "marker_obb" &&
+               std::regex_match(topic.name, match, obstacle_pattern)) {
       const int obstacle_id = std::stoi(match[1]);
       const int marker_id = std::stoi(match[2]);
       obstacles_[obstacle_id].markers[marker_id];
@@ -187,6 +241,17 @@ void MocapSceneProvider::DiscoverTopics(const ros::TimerEvent&) {
                marker_id, topic.name.c_str());
     }
   }
+}
+
+void MocapSceneProvider::ObstacleCallback(
+    int obstacle_id,
+    const geometry_msgs::PoseStamped::ConstPtr& message) {
+  if (!message || !FinitePose(*message)) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto& sample = obstacles_[obstacle_id].rigid_body;
+  sample.pose = *message;
+  sample.received = ros::Time::now();
+  sample.seen = true;
 }
 
 void MocapSceneProvider::VehicleMarkerCallback(
@@ -265,6 +330,37 @@ Pose2d MocapSceneProvider::TransformVehicle(
 void MocapSceneProvider::RefreshGeometry(const ros::Time& now) {
   std::lock_guard<std::mutex> lock(mutex_);
   for (auto& entry : obstacles_) {
+    if (obstacle_geometry_mode_ == "rigid_body") {
+      const auto& sample = entry.second.rigid_body;
+      if (!sample.seen || (now - sample.received).toSec() > data_timeout_)
+        continue;
+      const auto rigid_center = TransformPoint(sample.pose.pose.position.x,
+                                               sample.pose.pose.position.y);
+      const double rigid_yaw = common::math::NormalizeAngle(
+          PoseYaw(sample.pose) + rotation_);
+      const double c = std::cos(rigid_yaw);
+      const double s = std::sin(rigid_yaw);
+      SceneObstacle geometry;
+      geometry.id = "obstacle_" + std::to_string(entry.first);
+      geometry.x = rigid_center.x() + c * obstacle_center_offset_x_ -
+                   s * obstacle_center_offset_y_;
+      geometry.y = rigid_center.y() + s * obstacle_center_offset_x_ +
+                   c * obstacle_center_offset_y_;
+      geometry.yaw = common::math::NormalizeAngle(
+          rigid_yaw + obstacle_yaw_offset_);
+      geometry.length = obstacle_length_;
+      geometry.width = obstacle_width_;
+      const bool changed = !entry.second.has_geometry ||
+          std::hypot(geometry.x - entry.second.last_geometry.x,
+                     geometry.y - entry.second.last_geometry.y) > 1e-4 ||
+          std::abs(common::math::NormalizeAngle(
+              geometry.yaw - entry.second.last_geometry.yaw)) > 1e-3;
+      entry.second.last_geometry = geometry;
+      entry.second.last_geometry_time = now;
+      entry.second.has_geometry = true;
+      if (changed) ++revision_;
+      continue;
+    }
     std::vector<common::math::Vec2d> points;
     bool all_markers_fresh = !entry.second.markers.empty();
     for (const auto& marker : entry.second.markers) {
@@ -344,7 +440,9 @@ MocapSceneProvider::Status MocapSceneProvider::StatusLocked(
   else if (!status.vehicle_fresh) status.message = "vehicle pose is stale";
   else if (obstacles_.empty()) status.message = allow_empty_obstacles_
       ? "confirmed obstacle-free mocap scene"
-      : "waiting for ObstacleN_MarkerM topics";
+      : (obstacle_geometry_mode_ == "rigid_body"
+             ? "waiting for ObstacleN/pose or ObsN/pose topics"
+             : "waiting for ObstacleN_MarkerM topics");
   else if (!status.obstacles_fresh) {
     bool beyond_retention = false;
     for (const auto& obstacle : obstacles_) {
@@ -355,7 +453,9 @@ MocapSceneProvider::Status MocapSceneProvider::StatusLocked(
     }
     status.message = beyond_retention
         ? "obstacle stale; last geometry shown for safety only"
-        : "obstacle markers are incomplete or stale";
+        : (obstacle_geometry_mode_ == "rigid_body"
+               ? "obstacle rigid-body pose is invalid or stale"
+               : "obstacle markers are incomplete or stale");
   }
   else status.message = "mocap scene ready";
   return status;
@@ -381,8 +481,8 @@ bool MocapSceneProvider::Snapshot(SceneSnapshot* snapshot,
   snapshot->obstacles.clear();
   for (const auto& obstacle : obstacles_) {
     if (!obstacle.second.has_geometry) continue;
-    // Retain the last known geometry through short occlusions.  Readiness is
-    // false while stale, so retained obstacles remain visible but motion is
+    // Retain the last known geometry through occlusions. Readiness is false
+    // while stale, so retained obstacles remain visible but motion is
     // inhibited instead of silently treating them as absent.
     snapshot->obstacles.push_back(obstacle.second.last_geometry);
   }

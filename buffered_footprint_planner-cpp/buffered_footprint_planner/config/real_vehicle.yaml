@@ -30,6 +30,16 @@ mocap:
   body_to_rear_axle_y: 0.0
   data_timeout: 0.25
   geometry_retention: 2.0
+  # rigid_body: use ObstacleN/pose or ObsN/pose with fixed geometry.
+  # marker_obb: retain the legacy ObstacleN_MarkerM OBB fitting mode.
+  obstacle_geometry_mode: rigid_body
+  obstacle_length: 0.15
+  obstacle_width: 0.15
+  # Centre offset is expressed in the Nokov obstacle rigid-body frame (m).
+  obstacle_center_offset_x: 0.0
+  obstacle_center_offset_y: 0.0
+  obstacle_yaw_offset: 0.0
+  # The following two parameters are used only in marker_obb mode.
   obstacle_padding: 0.0
   minimum_obstacle_markers: 3
   # Old fork_planner localization chooses the rearmost VehicleN_MarkerM along

@@ -91,3 +91,23 @@ roslaunch buffered_footprint_planner real_vehicle.launch \
 
 软件急停和命令超时保护不能替代物理急停。首次上车必须核对单位、坐标变换、
 后轴参考点、转向符号和限幅，并进行架空轮测试。
+
+## 实车障碍物标记
+
+实车障碍物默认按 Nokov 刚体位姿和固定长宽建模。每个方盒安装四个反光点：
+一个位于盒子几何中心，另外三个采用可稳定区分方向的非对称布局；反光点不要求
+位于四角。在 Nokov 中将刚体原点手动设为中心反光点，并将刚体坐标轴与盒子边缘
+对齐。刚体名称使用 `ObstacleN`，也兼容 `ObsN`，编号由运行时动态发现。
+
+默认配置位于 `buffered_footprint_planner/config/real_vehicle.yaml`：
+
+- `obstacle_geometry_mode: rigid_body` 使用刚体位姿；改为 `marker_obb` 可启用旧的
+  `ObstacleN_MarkerM` 拟合方式。
+- `obstacle_length`、`obstacle_width` 为所有障碍物共用的固定尺寸，单位为米。
+- `obstacle_center_offset_x`、`obstacle_center_offset_y` 是 Nokov 障碍物刚体局部
+  坐标系中的中心修正，单位为米。
+- `obstacle_yaw_offset` 是刚体航向到盒体航向的修正，单位为弧度。
+
+`rigid_body` 模式不会订阅障碍物 Marker 话题。刚体无效或超时时，最后可信矩形
+仍用于显示，但规划和轨迹执行会被禁止；车辆刚体、车辆 Marker 和后轴中心算法
+保持不变。详细标定与现场检查见 [REAL_VEHICLE.md](REAL_VEHICLE.md)。

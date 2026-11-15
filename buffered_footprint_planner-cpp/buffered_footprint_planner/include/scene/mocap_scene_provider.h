@@ -39,6 +39,7 @@ class MocapSceneProvider {
     bool seen = false;
   };
   struct ObstacleTrack {
+    Sample rigid_body;
     std::map<int, Sample> markers;
     SceneObstacle last_geometry;
     ros::Time last_geometry_time;
@@ -53,6 +54,8 @@ class MocapSceneProvider {
       const geometry_msgs::PoseStamped::ConstPtr& message);
   void MarkerCallback(int obstacle_id, int marker_id,
                       const geometry_msgs::PoseStamped::ConstPtr& message);
+  void ObstacleCallback(int obstacle_id,
+                        const geometry_msgs::PoseStamped::ConstPtr& message);
   void RefreshGeometry(const ros::Time& now);
   Status StatusLocked(const ros::Time& now) const;
 
@@ -80,6 +83,12 @@ class MocapSceneProvider {
   double data_timeout_ = 0.25;
   double geometry_retention_ = 2.0;
   double obstacle_padding_ = 0.0;
+  std::string obstacle_geometry_mode_ = "rigid_body";
+  double obstacle_length_ = 0.15;
+  double obstacle_width_ = 0.15;
+  double obstacle_center_offset_x_ = 0.0;
+  double obstacle_center_offset_y_ = 0.0;
+  double obstacle_yaw_offset_ = 0.0;
   int minimum_obstacle_markers_ = 3;
   bool use_vehicle_rear_marker_ = true;
   bool allow_empty_obstacles_ = false;
