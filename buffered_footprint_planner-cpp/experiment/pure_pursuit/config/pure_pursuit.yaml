@@ -44,10 +44,11 @@ terminal_max_speed: 0.08
 # Locked-failure guards. Emergency stop bypasses normal command slew limits.
 localization_jump_threshold: 0.50
 velocity_timeout: 0.30
+trust_velocity_topic: false
+preparation_timeout: 3.0
 max_lateral_error: 0.25
 max_yaw_error: 1.05
 max_projection_distance: 0.30
-obstacle_emergency_distance: 0.03
 obstacle_timeout: 0.50
 progress_stagnation_timeout: 4.0
 progress_stagnation_distance: 0.01

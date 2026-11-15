@@ -19,18 +19,26 @@ int main() {
   trajectory.nodes[2].v = -0.1;
   trajectory.intervals[0].dt = 0.07;
   trajectory.intervals[1].dt = 0.13;
+  trajectory.intervals[0].gear = true;
+  trajectory.intervals[1].gear = false;
 
   sandbox_msgs::Trajectory message;
   std::string error;
   assert(execution::TrajectoryAdapter::Convert(
-      trajectory, 7, 42, &message, &error));
+      trajectory, 7, 42, "/tmp/task42", 0.01, 3, &message, &error));
   assert(message.target == 7);
   assert(message.header.seq == 42);
+  assert(message.result_directory == "/tmp/task42");
+  assert(std::abs(message.obstacle_clearance - 0.01) < 1e-12);
+  assert(message.obstacle_count == 3);
   assert(message.points.size() == 3);
   assert(std::abs(message.points[0].time) < 1e-12);
   assert(std::abs(message.points[1].time - 0.07) < 1e-12);
   assert(std::abs(message.points[2].time - 0.20) < 1e-12);
   assert(message.points[2].velocity < 0.0);
+  assert(message.points[0].gear == 1);
+  assert(message.points[1].gear == -1);
+  assert(message.points[2].gear == -1);
 
   trajectory.intervals[1].dt = 0.0;
   assert(!execution::TrajectoryAdapter::Validate(trajectory, &error));

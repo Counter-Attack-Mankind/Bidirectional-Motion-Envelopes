@@ -13,13 +13,14 @@ int Fail(const std::string& message) {
 }
 
 pure_pursuit::TrackingPoint P(double t, double x, double y, double yaw,
-                              double velocity) {
+                              double velocity, int gear = 1) {
   pure_pursuit::TrackingPoint point;
   point.time = t;
   point.x = x;
   point.y = y;
   point.yaw = yaw;
   point.velocity = velocity;
+  point.gear = gear;
   return point;
 }
 
@@ -35,20 +36,20 @@ int main() {
     return Fail("pure forward trajectory classification failed: " + error);
 
   TrackingPath reverse;
-  if (!reverse.Build({P(0, 1, 0, 0, 0), P(1, 0, 0, 0, -0.2)}, &error) ||
+  if (!reverse.Build({P(0, 1, 0, 0, 0, -1), P(1, 0, 0, 0, -0.2, -1)}, &error) ||
       reverse.segment(0).gear != -1)
     return Fail("pure reverse trajectory classification failed: " + error);
 
   TrackingPath cusp;
   if (!cusp.Build({P(0, 0, 0, 0, 0.1), P(1, 1, 0, 0, 0),
-                   P(2, 1, 0, 0, 0), P(3, 0, 0, 0, -0.1)}, &error) ||
+                   P(2, 1, 0, 0, 0, -1), P(3, 0, 0, 0, -0.1, -1)}, &error) ||
       cusp.segments().size() != 2 || cusp.segment(0).gear != 1 ||
       cusp.segment(1).gear != -1)
     return Fail("forward-to-reverse cusp classification failed: " + error);
 
   TrackingPath reverse_forward;
   if (!reverse_forward.Build(
-          {P(0, 1, 0, 0, -0.1), P(1, 0, 0, 0, 0),
+          {P(0, 1, 0, 0, -0.1, -1), P(1, 0, 0, 0, 0, -1),
            P(2, 0, 0, 0, 0), P(3, 1, 0, 0, 0.1)}, &error) ||
       reverse_forward.segments().size() != 2 ||
       reverse_forward.segment(0).gear != -1 ||
@@ -57,8 +58,8 @@ int main() {
 
   TrackingPath multiple_cusps;
   if (!multiple_cusps.Build(
-          {P(0, 0, 0, 0, 0.1), P(1, 1, 0, 0, 0),
-           P(2, 0, 0, 0, -0.1), P(3, 1, 0, 0, 0.1)}, &error) ||
+          {P(0, 0, 0, 0, 0.1), P(1, 1, 0, 0, 0, -1),
+           P(2, 0, 0, 0, 0, 1), P(3, 1, 0, 0, 0.1)}, &error) ||
       multiple_cusps.segments().size() != 3 ||
       multiple_cusps.segment(0).gear != 1 ||
       multiple_cusps.segment(1).gear != -1 ||
@@ -69,6 +70,24 @@ int main() {
   if (conflict.Build({P(0, 0, 0, 0, -0.2), P(1, 1, 0, 0, -0.2)},
                      &error))
     return Fail("velocity/geometry direction conflict was accepted");
+
+  // Actual field failure: forward-Euler interval starts positive, ends
+  // negative, but explicit interval gear and geometric displacement are
+  // forward. The end velocity belongs to the next Euler interval.
+  TrackingPath crossing_zero;
+  if (!crossing_zero.Build(
+          {P(0, 0, 0, 0, 0.003649, 1),
+           P(0.1, 0.0003649, 0, 0, -0.011802, -1),
+           P(0.2, -0.0008153, 0, 0, -0.02, -1)}, &error) ||
+      crossing_zero.segment(0).gear != 1 ||
+      crossing_zero.segment(1).gear != -1)
+    return Fail("forward-Euler cross-zero interval regression failed: " + error);
+
+  TrackingPath near_zero_motion;
+  if (!near_zero_motion.Build(
+          {P(0, 0, 0, 0, 0, 1), P(0.1, 1e-6, 0, 0, 0, 1),
+           P(0.2, 0.01, 0, 0, 0.05, 1)}, &error))
+    return Fail("near-zero displacement interval was rejected: " + error);
 
   // Overlapping return branch is geometrically closer, but projection is
   // constrained to the current segment and a local arc-length window.

@@ -13,6 +13,7 @@ struct TrackingPoint {
   double yaw = 0.0;
   double velocity = 0.0;
   double acceleration = 0.0;
+  int gear = 0;
   double s = 0.0;
 };
 

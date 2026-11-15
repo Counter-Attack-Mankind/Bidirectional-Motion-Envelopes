@@ -37,6 +37,8 @@ bool TrajectoryAdapter::Validate(const optimizer::Trajectory& trajectory,
 
 bool TrajectoryAdapter::Convert(const optimizer::Trajectory& trajectory,
                                 int vehicle_id, std::uint32_t task_id,
+                                const std::string& result_directory,
+                                double obstacle_clearance, int obstacle_count,
                                 sandbox_msgs::Trajectory* message,
                                 std::string* error) {
   if (!message) {
@@ -48,6 +50,9 @@ bool TrajectoryAdapter::Convert(const optimizer::Trajectory& trajectory,
   message->header.frame_id = "map";
   message->header.seq = task_id;
   message->target = vehicle_id;
+  message->result_directory = result_directory;
+  message->obstacle_clearance = obstacle_clearance;
+  message->obstacle_count = obstacle_count;
   message->points.clear();
   message->points.reserve(trajectory.nodes.size());
   double time = 0.0;
@@ -60,6 +65,9 @@ bool TrajectoryAdapter::Convert(const optimizer::Trajectory& trajectory,
     point.yaw = trajectory.nodes[i].theta;
     point.velocity = trajectory.nodes[i].v;
     point.acceleration = trajectory.nodes[i].a;
+    const std::size_t interval =
+        std::min(i, trajectory.intervals.size() - 1);
+    point.gear = trajectory.intervals[interval].gear ? 1 : -1;
     message->points.push_back(point);
   }
   return true;

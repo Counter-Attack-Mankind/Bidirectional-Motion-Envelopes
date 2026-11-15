@@ -49,6 +49,15 @@ int main() {
   assert(tracking_manager.state() ==
          execution::ExperimentManager::State::kWaitingForSceneChange);
 
+  execution::ExperimentManager controller_failure(config);
+  scene = MakeScene();
+  AdvanceToPlanning(&controller_failure, scene);
+  controller_failure.PlanningFinished(true, true);
+  controller_failure.TrackingFailed();
+  assert(!controller_failure.frozen_scene_valid());
+  assert(controller_failure.state() ==
+         execution::ExperimentManager::State::kWaitingForSceneChange);
+
   // Geometrically identical OBBs must not look moved merely because minimum
   // area fitting selected an equivalent heading/corner ordering.
   scene::SceneObstacle square_a{"square", 1.0, 1.0, 0.0, 0.2, 0.2};

@@ -2,6 +2,7 @@
 #include <sandbox_msgs/AprilObject.h>
 #include <sandbox_msgs/ChassisCommand.h>
 #include <sandbox_msgs/Trajectory.h>
+#include <sandbox_msgs/TrackingStatus.h>
 #include <std_msgs/Bool.h>
 #include <std_msgs/Float64.h>
 #include <std_msgs/Int32.h>
@@ -10,7 +11,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -18,7 +18,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include <sys/stat.h>
 
 #include "pure_pursuit/tracking_core.h"
 
@@ -34,13 +33,14 @@ double Clamp(double value, double low, double high) {
 const char* GearName(int gear) { return gear > 0 ? "FORWARD" : "REVERSE"; }
 
 enum class Phase {
-  kWaiting, kFollowing, kApproachingCusp, kCuspBraking,
+  kWaiting, kPreparing, kFollowing, kApproachingCusp, kCuspBraking,
   kCuspStopConfirm, kFinalApproach, kFinalStopConfirm, kCompleted, kFailed
 };
 
 const char* PhaseName(Phase phase) {
   switch (phase) {
     case Phase::kWaiting: return "WAITING";
+    case Phase::kPreparing: return "PREPARING";
     case Phase::kFollowing: return "FOLLOWING";
     case Phase::kApproachingCusp: return "APPROACHING_CUSP";
     case Phase::kCuspBraking: return "CUSP_BRAKING";
@@ -161,6 +161,8 @@ class TrackingController {
         "/chassis", 1, true);
     reached_publisher_ = node_.advertise<std_msgs::Int32>(
         "/reached", 1, false);
+    status_publisher_ = node_.advertise<sandbox_msgs::TrackingStatus>(
+        "/tracking_status", 5, true);
     timer_ = node_.createTimer(ros::Duration(0.1),
                                &TrackingController::ControlCallback, this);
   }
@@ -176,8 +178,9 @@ class TrackingController {
         "localization_jump_threshold", 0.50);
     execution_enabled_ = node_.param("execution_enabled", true);
     velocity_timeout_ = node_.param("velocity_timeout", 0.30);
+    trust_velocity_topic_ = node_.param("trust_velocity_topic", false);
+    preparation_timeout_ = node_.param("preparation_timeout", 3.0);
     debug_log_enable_ = node_.param("debug_log_enable", true);
-    node_.param<std::string>("debug_log_dir", debug_log_dir_, debug_log_dir_);
     longitude_kp_ = node_.param("longitude_kp", longitude_kp_);
     longitude_ki_ = node_.param("longitude_ki", longitude_ki_);
     feedforward_gain_ = node_.param("velocity_feedforward_gain", 1.0);
@@ -213,7 +216,6 @@ class TrackingController {
     max_lateral_error_ = node_.param("max_lateral_error", 0.25);
     max_yaw_error_ = node_.param("max_yaw_error", 1.05);
     max_projection_distance_ = node_.param("max_projection_distance", 0.30);
-    emergency_distance_ = node_.param("obstacle_emergency_distance", 0.03);
     obstacle_timeout_ = node_.param("obstacle_timeout", 0.50);
     stagnation_timeout_ = node_.param("progress_stagnation_timeout", 4.0);
     stagnation_distance_ = node_.param("progress_stagnation_distance", 0.01);
@@ -243,10 +245,10 @@ class TrackingController {
     return path_.segment(segment_index_).gear;
   }
   double SignedVelocity() const {
-    if (velocity_seen_ && !last_velocity_time_.isZero() &&
+    if (trust_velocity_topic_ && velocity_seen_ && !last_velocity_time_.isZero() &&
         (ros::Time::now() - last_velocity_time_).toSec() <= velocity_timeout_)
       return measured_velocity_;
-    return estimated_speed_ * Gear();
+    return estimated_velocity_;
   }
   double Speed() const { return std::abs(SignedVelocity()); }
   void ResetControl() {
@@ -262,19 +264,72 @@ class TrackingController {
     command.target = tracking_object_;
     command_publisher_.publish(command);
     last_command_ = 0.0;
+    last_steering_ = 0.0;
+  }
+  void PublishNormalStop(double dt) {
+    sandbox_msgs::ChassisCommand command;
+    command.target = tracking_object_;
+    const double step = max_deceleration_ * dt;
+    command.throttle = Clamp(0.0, last_command_ - step,
+                             last_command_ + step);
+    const double steer_step = max_steering_rate_ * dt;
+    command.steering = Clamp(0.0, last_steering_ - steer_step,
+                             last_steering_ + steer_step);
+    command_publisher_.publish(command);
+    last_command_ = command.throttle;
+    last_steering_ = command.steering;
+  }
+  void Event(const std::string& text) {
+    if (!result_directory_.empty()) {
+      std::ofstream out(result_directory_ + "/events.log", std::ios::app);
+      if (out) out << std::fixed << std::setprecision(3)
+                   << ros::Time::now().toSec() << " task=" << task_id_
+                   << " vehicle=" << tracking_object_ << " " << text << '\n';
+    }
+  }
+  void PublishStatus(int status, const std::string& reason) {
+    sandbox_msgs::TrackingStatus message;
+    message.header.stamp = ros::Time::now();
+    message.task_id = task_id_ < 0 ? 0 : static_cast<uint32_t>(task_id_);
+    message.vehicle_id = tracking_object_;
+    message.status = status;
+    message.reason = reason;
+    message.result_directory = result_directory_;
+    status_publisher_.publish(message);
+    Event("tracking_status=" + std::to_string(status) + " reason=" + reason);
+    if (!result_directory_.empty() &&
+        (status == sandbox_msgs::TrackingStatus::FAILED ||
+         status == sandbox_msgs::TrackingStatus::REACHED)) {
+      std::ofstream summary(result_directory_ + "/summary.txt", std::ios::app);
+      if (summary)
+        summary << "trajectory_validation_status="
+                << (trajectory_validated_ ? "passed" : "failed") << '\n'
+                << "tracking_status="
+                << (status == sandbox_msgs::TrackingStatus::REACHED
+                        ? "succeeded"
+                        : (trajectory_validated_ ? "failed" : "not_started"))
+                << '\n'
+                << "tracking_reason=" << reason << '\n';
+    }
   }
   void Fail(const std::string& reason) {
     if (phase_ == Phase::kFailed) return;
     failure_reason_ = reason;
     phase_ = Phase::kFailed;
     PublishZero();
-    ROS_ERROR("[PP][FAILED] Vehicle%d: %s", tracking_object_, reason.c_str());
+    trajectory_armed_ = false;
+    PublishStatus(sandbox_msgs::TrackingStatus::FAILED, reason);
+    ROS_ERROR("[PP][FAILED] task=%d Vehicle%d: %s", task_id_,
+              tracking_object_, reason.c_str());
     Log(pure_pursuit::TrackingPoint(), 0.0, 0.0, 0.0, 0.0, reason);
   }
 
   void EstopCallback(const std_msgs::BoolConstPtr& message) {
-    estop_ = !message || message->data;
-    if (estop_) { PublishZero(); ResetControl(); }
+    const bool next = !message || message->data;
+    if (next && !estop_ && trajectory_armed_)
+      Fail("emergency stop interrupted active task; a new task is required");
+    estop_ = next;
+    if (estop_) PublishZero();
   }
   void VelocityCallback(const std_msgs::Float64ConstPtr& message) {
     if (!message || !std::isfinite(message->data)) return;
@@ -316,14 +371,17 @@ class TrackingController {
       }
       const double dt = (now - last_object_time_).toSec();
       if (dt > 1e-3) {
-        estimated_speed_ = 0.65 * estimated_speed_ + 0.35 * distance / dt;
+        const double signed_sample =
+            (dx * std::cos(object_.yaw) + dy * std::sin(object_.yaw)) / dt;
+        estimated_velocity_ = 0.65 * estimated_velocity_ +
+                              0.35 * signed_sample;
         if (distance >= 0.003) {
           motion_heading_ = std::atan2(dy, dx);
           motion_heading_valid_ = true;
         }
       }
     } else {
-      estimated_speed_ = 0.0;
+      estimated_velocity_ = 0.0;
       motion_heading_valid_ = false;
     }
     object_ = *message;
@@ -336,12 +394,29 @@ class TrackingController {
     if (!message || message->points.size() < 2) return;
     if (auto_target_ && !target_bound_) BindTarget(message->target);
     if (!target_bound_ || message->target != tracking_object_) return;
+    const int incoming_task = static_cast<int>(message->header.seq);
+    if (incoming_task <= last_accepted_task_) {
+      ROS_WARN("[PP] ignored duplicate/stale trajectory task=%d Vehicle%d; "
+               "last=%d", incoming_task, message->target,
+               last_accepted_task_);
+      return;
+    }
+    task_id_ = incoming_task;
+    last_accepted_task_ = incoming_task;
+    result_directory_ = message->result_directory;
+    expected_obstacles_ = std::max(0, message->obstacle_count);
+    emergency_distance_ = std::max(0.0, message->obstacle_clearance);
+    trajectory_validated_ = false;
+    InitializeLogs();
+    PublishStatus(sandbox_msgs::TrackingStatus::PREPARING,
+                  "trajectory received; waiting for fresh scene data");
     std::vector<pure_pursuit::TrackingPoint> points;
     for (const auto& source : message->points) {
       pure_pursuit::TrackingPoint point;
       point.time = source.time; point.x = source.x; point.y = source.y;
       point.yaw = source.yaw; point.velocity = source.velocity;
       point.acceleration = source.acceleration;
+      point.gear = source.gear;
       points.push_back(point);
     }
     pure_pursuit::TrackingPath candidate;
@@ -351,18 +426,20 @@ class TrackingController {
       return;
     }
     path_ = candidate;
-    task_id_ = static_cast<int>(message->header.seq);
+    trajectory_validated_ = true;
     segment_index_ = 0;
     actual_s_ = high_water_s_ = path_.segment(0).s_begin;
     reference_time_ = path_.segment(0).time_begin;
-    phase_ = Phase::kFollowing;
+    phase_ = Phase::kPreparing;
+    trajectory_armed_ = true;
     failure_reason_.clear();
-    task_start_ = phase_start_ = last_progress_time_ = ros::Time::now();
+    preparation_start_ = ros::Time::now();
     last_progress_s_ = actual_s_;
     ResetControl();
-    InitializeLogs();
     LogOpenLoop();
-    ROS_WARN("[PP] one-shot task=%d Vehicle%d points=%zu segments=%zu",
+    PublishStatus(sandbox_msgs::TrackingStatus::VALIDATED,
+                  "trajectory direction validation succeeded");
+    ROS_WARN("[PP] task=%d Vehicle%d trajectory validated: points=%zu segments=%zu",
              task_id_, tracking_object_, points.size(), path_.segments().size());
   }
 
@@ -406,7 +483,7 @@ class TrackingController {
       minimum_clearance_ = std::min(minimum_clearance_,
           pure_pursuit::PolygonDistance(footprint, item.second.polygon));
     }
-    if (minimum_clearance_ <= emergency_distance_) {
+    if (minimum_clearance_ + 1e-4 < emergency_distance_) {
       Fail("vehicle footprint violated obstacle emergency distance");
       return false;
     }
@@ -432,12 +509,16 @@ class TrackingController {
       if (phase_ == Phase::kFollowing && remaining <= cusp_approach_) {
         phase_ = Phase::kApproachingCusp;
         phase_start_ = ros::Time::now();
+        Event("approaching cusp segment=" + std::to_string(segment_index_));
+        ROS_INFO("[PP] task=%d Vehicle%d segment=%d approaching cusp",
+                 task_id_, tracking_object_, segment_index_);
       }
       if (phase_ == Phase::kApproachingCusp &&
           position_error <= cusp_position_tolerance_ &&
           heading_error <= cusp_yaw_tolerance_) {
         phase_ = Phase::kCuspBraking;
         integral_error_ = 0.0;
+        Event("cusp pose reached; controlled braking");
       }
       if ((phase_ == Phase::kApproachingCusp ||
            phase_ == Phase::kCuspBraking ||
@@ -450,8 +531,10 @@ class TrackingController {
             heading_error > cusp_yaw_tolerance_) {
           phase_ = Phase::kApproachingCusp;
           stable_cycles_ = 0;
-        } else if (Speed() <= cusp_stop_speed_) {
+        } else if (Speed() <= cusp_stop_speed_ &&
+                   std::abs(last_command_) <= 0.005) {
           phase_ = Phase::kCuspStopConfirm; stable_cycles_ = 1;
+          Event("cusp stationary confirmation started");
         }
         return false;
       }
@@ -460,7 +543,8 @@ class TrackingController {
             heading_error > cusp_yaw_tolerance_) {
           phase_ = Phase::kApproachingCusp;
           stable_cycles_ = 0;
-        } else if (Speed() <= cusp_stop_speed_) ++stable_cycles_;
+        } else if (Speed() <= cusp_stop_speed_ &&
+                   std::abs(last_command_) <= 0.005) ++stable_cycles_;
         else { phase_ = Phase::kCuspBraking; stable_cycles_ = 0; }
         if (stable_cycles_ >= cusp_stop_cycles_) {
           ++segment_index_;
@@ -471,12 +555,21 @@ class TrackingController {
           phase_start_ = last_progress_time_ = ros::Time::now();
           last_progress_s_ = actual_s_;
           ResetControl();
+          PublishStatus(sandbox_msgs::TrackingStatus::SEGMENT_CHANGED,
+                        "confirmed stop; activated segment " +
+                        std::to_string(segment_index_));
           ROS_WARN("[PP] Vehicle%d segment=%d gear=%s after confirmed stop",
                    tracking_object_, segment_index_, GearName(next.gear));
         }
         return false;
       }
-    } else if (remaining <= terminal_slowdown_) phase_ = Phase::kFinalApproach;
+    } else if (phase_ == Phase::kFollowing &&
+               remaining <= terminal_slowdown_) {
+      phase_ = Phase::kFinalApproach;
+      Event("entered final approach");
+      ROS_INFO("[PP] task=%d Vehicle%d entered final approach",
+               task_id_, tracking_object_);
+    }
 
     if (final && phase_ == Phase::kFinalApproach) {
       const double c = std::cos(endpoint.yaw), s = std::sin(endpoint.yaw);
@@ -488,8 +581,10 @@ class TrackingController {
           heading_error <= final_yaw_tolerance_) {
         phase_ = Phase::kFinalStopConfirm;
         phase_start_ = ros::Time::now();
-        stable_cycles_ = Speed() <= final_stop_speed_ ? 1 : 0;
+        stable_cycles_ = Speed() <= final_stop_speed_ &&
+                         std::abs(last_command_) <= 0.005 ? 1 : 0;
         integral_error_ = 0.0;
+        Event("terminal pose reached; confirming stationary state");
         return false;
       }
     }
@@ -500,7 +595,8 @@ class TrackingController {
           std::abs(c * dx + s * dy) <= final_lon_tolerance_ &&
           std::abs(-s * dx + c * dy) <= final_lat_tolerance_ &&
           heading_error <= final_yaw_tolerance_;
-      if (pose_valid && Speed() <= final_stop_speed_) ++stable_cycles_;
+      if (pose_valid && Speed() <= final_stop_speed_ &&
+          std::abs(last_command_) <= 0.005) ++stable_cycles_;
       else if (!pose_valid) {
         phase_ = Phase::kFinalApproach;
         stable_cycles_ = 0;
@@ -510,6 +606,11 @@ class TrackingController {
         PublishZero();
         std_msgs::Int32 reached; reached.data = tracking_object_;
         reached_publisher_.publish(reached);
+        trajectory_armed_ = false;
+        PublishStatus(sandbox_msgs::TrackingStatus::REACHED,
+                      "terminal pose and stationary state confirmed");
+        ROS_INFO("[PP] task=%d Vehicle%d reached terminal pose",
+                 task_id_, tracking_object_);
         return false;
       }
       return false;
@@ -598,11 +699,6 @@ class TrackingController {
   }
 
   bool ProgressAndTimeout(double command) {
-    const double duration = path_.points().back().time - path_.points().front().time;
-    if ((ros::Time::now() - task_start_).toSec() >
-        duration * timeout_scale_ + timeout_margin_) {
-      Fail("overall tracking timed out"); return false;
-    }
     if (actual_s_ >= last_progress_s_ + stagnation_distance_) {
       last_progress_s_ = actual_s_;
       last_progress_time_ = ros::Time::now();
@@ -620,6 +716,38 @@ class TrackingController {
     if (!execution_enabled_ || estop_ || path_.empty() ||
         phase_ == Phase::kWaiting || phase_ == Phase::kCompleted ||
         phase_ == Phase::kFailed) { PublishZero(); return; }
+    if (phase_ == Phase::kPreparing) {
+      PublishZero();
+      const bool vehicle_ready = object_seen_ && !last_object_time_.isZero() &&
+          (ros::Time::now() - last_object_time_).toSec() <= localization_timeout_;
+      bool obstacles_ready =
+          static_cast<int>(obstacles_.size()) >= expected_obstacles_;
+      for (const auto& item : obstacles_)
+        obstacles_ready = obstacles_ready &&
+            (ros::Time::now() - item.second.received).toSec() <= obstacle_timeout_;
+      if (vehicle_ready && obstacles_ready) {
+        phase_ = Phase::kFollowing;
+        task_start_ = phase_start_ = last_progress_time_ = ros::Time::now();
+        last_progress_s_ = actual_s_;
+        ResetControl();
+        PublishStatus(sandbox_msgs::TrackingStatus::STARTED,
+                      "fresh vehicle localization and obstacle set received");
+        ROS_WARN("[PP] task=%d Vehicle%d tracking started",
+                 task_id_, tracking_object_);
+      } else if ((ros::Time::now() - preparation_start_).toSec() >
+                 preparation_timeout_) {
+        Fail(!vehicle_ready ? "startup localization timeout"
+                            : "startup obstacle-set timeout");
+      }
+      return;
+    }
+    const double duration = path_.points().back().time - path_.points().front().time;
+    if ((ros::Time::now() - task_start_).toSec() >
+        duration * timeout_scale_ + timeout_margin_) {
+      Fail("overall tracking timed out in state " +
+           std::string(PhaseName(phase_)));
+      return;
+    }
     if (!object_seen_ || last_object_time_.isZero() ||
         (ros::Time::now() - last_object_time_).toSec() > localization_timeout_) {
       Fail("vehicle localization missing or stale"); return;
@@ -627,7 +755,10 @@ class TrackingController {
     pure_pursuit::TrackingPoint projected;
     if (!UpdateProjection(dt, &projected) || !Safety(projected)) return;
     if (!UpdatePhase()) {
-      PublishZero();
+      if (phase_ == Phase::kCompleted || phase_ == Phase::kFailed)
+        PublishZero();
+      else
+        PublishNormalStop(dt);
       const auto reference = path_.SampleAtS(actual_s_, segment_index_);
       DrawAndLog(projected, reference, 0.0, 0.0, reference.x, reference.y, "");
       return;
@@ -666,15 +797,12 @@ class TrackingController {
 
   void InitializeLogs() {
     if (!debug_log_enable_) return;
-    mkdir(debug_log_dir_.c_str(), 0755);
+    if (result_directory_.empty()) return;
     if (open_loop_log_.is_open()) open_loop_log_.close();
     if (tracking_log_.is_open()) tracking_log_.close();
-    const long long stamp = static_cast<long long>(std::time(nullptr));
-    std::ostringstream prefix;
-    prefix << debug_log_dir_ << "/controller_V" << tracking_object_
-           << "_task" << task_id_ << "_" << stamp;
-    open_loop_log_.open((prefix.str() + "_open_loop.csv").c_str());
-    tracking_log_.open((prefix.str() + "_tracking.csv").c_str());
+    const std::string prefix = result_directory_ + "/pp";
+    open_loop_log_.open((prefix + "_open_loop.csv").c_str());
+    tracking_log_.open((prefix + "_tracking.csv").c_str());
     if (open_loop_log_)
       open_loop_log_ << "index,time,x,y,yaw,velocity,acceleration,s\n";
     if (tracking_log_)
@@ -683,7 +811,18 @@ class TrackingController {
                        "ref_x,ref_y,ref_yaw,ref_velocity,lookahead_x,lookahead_y,"
                        "longitudinal_error,lateral_error,yaw_error,projection_distance,"
                        "minimum_obstacle_distance,throttle,steering,failure_reason\n";
-    ROS_WARN("[PP] logs: %s", prefix.str().c_str());
+    std::ofstream parameters(result_directory_ +
+                             "/effective_controller_parameters.yaml");
+    if (parameters)
+      parameters << "vehicle_id: " << tracking_object_ << '\n'
+                 << "task_id: " << task_id_ << '\n'
+                 << "longitude_kp: " << longitude_kp_ << '\n'
+                 << "longitude_ki: " << longitude_ki_ << '\n'
+                 << "velocity_feedforward_gain: " << feedforward_gain_ << '\n'
+                 << "lookahead_scale: " << lookahead_scale_ << '\n'
+                 << "planning_obstacle_clearance: " << emergency_distance_ << '\n';
+    ROS_WARN("[PP] task=%d Vehicle%d logs=%s", task_id_, tracking_object_,
+             result_directory_.c_str());
   }
   void LogOpenLoop() {
     if (!open_loop_log_) return;
@@ -716,27 +855,32 @@ class TrackingController {
   ros::NodeHandle node_;
   ros::Subscriber trajectory_subscriber_, object_subscriber_, estop_subscriber_;
   ros::Subscriber velocity_subscriber_;
-  ros::Publisher command_publisher_, reached_publisher_;
+  ros::Publisher command_publisher_, reached_publisher_, status_publisher_;
   ros::Timer timer_;
   TrackingVisualization visualization_;
   pure_pursuit::TrackingPath path_;
   sandbox_msgs::AprilObject object_;
   std::map<int, ObstacleObservation> obstacles_;
-  int tracking_object_ = 0, task_id_ = -1, segment_index_ = 0;
+  int tracking_object_ = 0, task_id_ = -1, last_accepted_task_ = -1;
+  int segment_index_ = 0, expected_obstacles_ = 0;
   bool auto_target_ = false, target_bound_ = false, execution_enabled_ = true;
   bool object_seen_ = false, estop_ = true, velocity_seen_ = false;
+  bool trust_velocity_topic_ = false, trajectory_armed_ = false;
+  bool trajectory_validated_ = false;
   bool motion_heading_valid_ = false;
   Phase phase_ = Phase::kWaiting;
   std::string failure_reason_;
   ros::Time last_object_time_, last_velocity_time_, task_start_, phase_start_;
+  ros::Time preparation_start_;
   ros::Time last_progress_time_;
-  double measured_velocity_ = 0.0, estimated_speed_ = 0.0;
+  double measured_velocity_ = 0.0, estimated_velocity_ = 0.0;
   double motion_heading_ = 0.0, actual_s_ = 0.0, high_water_s_ = 0.0;
   double reference_time_ = 0.0, last_progress_s_ = 0.0;
   double last_command_ = 0.0, last_steering_ = 0.0, integral_error_ = 0.0;
   int stable_cycles_ = 0, direction_conflict_cycles_ = 0;
   double object_position_scale_ = 0.001, localization_timeout_ = 0.25;
   double localization_jump_threshold_ = 0.50, velocity_timeout_ = 0.30;
+  double preparation_timeout_ = 3.0;
   double longitude_kp_ = 1.0, longitude_ki_ = 0.1, feedforward_gain_ = 1.0;
   double integral_limit_ = 0.15, lookahead_scale_ = 1.0;
   double lookahead_min_ = 0.10, lookahead_max_ = 0.15, lookahead_ratio_ = 0.8;
@@ -763,7 +907,7 @@ class TrackingController {
   double projection_distance_ = 0.0;
   double minimum_clearance_ = std::numeric_limits<double>::infinity();
   bool debug_log_enable_ = true;
-  std::string debug_log_dir_ = ".";
+  std::string result_directory_;
   std::ofstream open_loop_log_, tracking_log_;
 };
 }  // namespace

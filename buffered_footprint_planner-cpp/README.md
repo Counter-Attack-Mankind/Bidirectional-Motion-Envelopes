@@ -142,3 +142,10 @@ roslaunch buffered_footprint_planner real_vehicle.launch \
 进度停滞、换向超时及全程超时。任一异常都会锁定失败并向现有
 `chassis_command_guard` 上游立即发布零命令。参数与现场分阶段验证方法见
 [REAL_VEHICLE.md](REAL_VEHICLE.md)。
+
+轨迹消息显式携带每个 BME interval 的原始 gear。控制端按前向 Euler 语义使用
+区间起点速度做一致性检查，不再用两个端点中绝对值较大的速度重新猜测方向；
+因此换向附近终点速度跨零不会误杀仍属于前进 gear 的合法区间。轨迹还携带当前
+任务结果目录、规划 `dmin` 和障碍物数量，PP 日志与规划结果写入同一个任务目录。
+控制器通过 `/tracking_status` 返回 task ID、Vehicle ID、状态和原因；失败会使
+上游急停并退出 TRACKING，旧任务不会在解除急停后自动恢复。

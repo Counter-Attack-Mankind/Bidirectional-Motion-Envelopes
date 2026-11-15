@@ -36,6 +36,7 @@ class ExperimentManager {
   bool BeginPlanning(scene::SceneSnapshot* frozen, std::uint64_t* generation);
   void PlanningFinished(bool success, bool execute);
   void Reached(const scene::Pose2d& stopped_pose);
+  void TrackingFailed();
   void ForceSafeWait();
   void AbortTask();
 

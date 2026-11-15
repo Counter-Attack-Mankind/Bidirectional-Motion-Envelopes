@@ -15,6 +15,8 @@ class TrajectoryAdapter {
                        std::string* error);
   static bool Convert(const optimizer::Trajectory& trajectory,
                       int vehicle_id, std::uint32_t task_id,
+                      const std::string& result_directory,
+                      double obstacle_clearance, int obstacle_count,
                       sandbox_msgs::Trajectory* message,
                       std::string* error);
 };

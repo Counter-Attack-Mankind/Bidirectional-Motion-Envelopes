@@ -16,6 +16,7 @@ add_message_files(
   AprilObject.msg
   Trajectory.msg
   TrajectoryPoint.msg
+  TrackingStatus.msg
   ChassisCommand.msg
   RecoveryVehicleState.msg
   RecoverySnapshot.msg

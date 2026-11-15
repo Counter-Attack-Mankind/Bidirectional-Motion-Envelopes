@@ -118,13 +118,16 @@ bool TrackingPath::Build(std::vector<TrackingPoint> points,
     const double ds = std::hypot(dx, dy);
     points[i + 1].s = points[i].s + ds;
 
-    int velocity_gear = 0;
-    const double evidence = std::abs(points[i + 1].velocity) >=
-                                    std::abs(points[i].velocity)
-                                ? points[i + 1].velocity
-                                : points[i].velocity;
-    if (std::abs(evidence) > kVelocityEvidence)
-      velocity_gear = evidence > 0.0 ? 1 : -1;
+    const int original_gear = points[i].gear;
+    if (original_gear != 1 && original_gear != -1) {
+      if (error) *error = "interval " + std::to_string(i) +
+          " has no valid original gear";
+      return false;
+    }
+    const int start_velocity_gear =
+        std::abs(points[i].velocity) > kVelocityEvidence
+            ? (points[i].velocity > 0.0 ? 1 : -1) : 0;
+    int geometry_gear = 0;
 
     if (ds > kMotionEpsilon) {
       const double tangent = std::atan2(dy, dx);
@@ -137,28 +140,27 @@ bool TrackingPath::Build(std::vector<TrackingPoint> points,
         if (error) *error = "path tangent is inconsistent with vehicle heading";
         return false;
       }
-      const int geometry_gear = alignment > 0.0 ? 1 : -1;
-      if (velocity_gear != 0 && velocity_gear != geometry_gear) {
-        if (error) *error = "velocity sign conflicts with geometric motion direction";
-        return false;
-      }
-      interval_gears_[i] = geometry_gear;
-    } else {
-      interval_gears_[i] = velocity_gear;
+      geometry_gear = alignment > 0.0 ? 1 : -1;
     }
-  }
-
-  int next_known = 0;
-  for (int i = static_cast<int>(interval_gears_.size()) - 1; i >= 0; --i) {
-    if (interval_gears_[i] != 0) next_known = interval_gears_[i];
-    else if (i == 0 || interval_gears_[i - 1] == 0)
-      interval_gears_[i] = next_known;
-  }
-  int previous = 0;
-  for (std::size_t i = 0; i < interval_gears_.size(); ++i) {
-    if (interval_gears_[i] == 0) interval_gears_[i] = previous;
-    if (interval_gears_[i] == 0) interval_gears_[i] = 1;
-    previous = interval_gears_[i];
+    if ((geometry_gear != 0 && geometry_gear != original_gear) ||
+        (start_velocity_gear != 0 && start_velocity_gear != original_gear)) {
+      if (error) {
+        *error = "interval " + std::to_string(i) +
+            " direction conflict: start_v=" +
+            std::to_string(points[i].velocity) + " end_v=" +
+            std::to_string(points[i + 1].velocity) + " original_gear=" +
+            std::to_string(original_gear) + " geometry_gear=" +
+            std::to_string(geometry_gear) +
+            (geometry_gear != 0 && geometry_gear != original_gear
+                 ? " geometric displacement disagrees with original gear"
+                 : " Euler interval start velocity disagrees with original gear");
+      }
+      return false;
+    }
+    // BME uses forward Euler: interval i is driven by node i and its explicit
+    // optimized interval gear. Node i+1 may cross zero before the next
+    // interval and must never reclassify interval i.
+    interval_gears_[i] = original_gear;
   }
 
   int begin = 0;

@@ -176,6 +176,12 @@ void ExperimentManager::Reached(const scene::Pose2d& stopped_pose) {
   state_ = State::kCompleted;
 }
 
+void ExperimentManager::TrackingFailed() {
+  if (state_ != State::kTracking) return;
+  frozen_scene_valid_ = false;
+  state_ = State::kWaitingForSceneChange;
+}
+
 void ExperimentManager::ForceSafeWait() {
   frozen_scene_valid_ = false;
   state_ = State::kWaitingForData;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <utility>
 
 #include "planning/experiment_logger.h"
@@ -31,6 +32,16 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
   const auto pipeline_begin = std::chrono::steady_clock::now();
   auto notify_stage = [&](PlanningStage stage, PlanningStageState state,
                           double stage_elapsed, const std::string& message) {
+    if (!result.result_directory.empty()) {
+      std::ofstream events(
+          std::filesystem::path(result.result_directory) / "events.log",
+          std::ios::app);
+      if (events)
+        events << "task=" << snapshot.task_id << " planning_stage="
+               << static_cast<int>(stage) << " state="
+               << static_cast<int>(state) << " elapsed_s=" << stage_elapsed
+               << " reason=" << message << '\n';
+    }
     if (!stage_callback) return;
     stage_callback({stage, state, stage_elapsed, SecondsSince(pipeline_begin),
                     message});

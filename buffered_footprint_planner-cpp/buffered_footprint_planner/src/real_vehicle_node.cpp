@@ -1,6 +1,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <functional>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -10,6 +11,7 @@
 #include <sandbox_msgs/AprilObject.h>
 #include <sandbox_msgs/ChassisCommand.h>
 #include <sandbox_msgs/Trajectory.h>
+#include <sandbox_msgs/TrackingStatus.h>
 #include <std_msgs/Bool.h>
 #include <std_msgs/Int32.h>
 
@@ -79,8 +81,8 @@ class RealVehicleNode {
         "/object", 5, false);
     estop_publisher_ = private_node_.advertise<std_msgs::Bool>(
         "/estop", 1, true);
-    reached_subscriber_ = private_node_.subscribe(
-        "/reached", 1, &RealVehicleNode::ReachedCallback, this);
+    tracking_status_subscriber_ = private_node_.subscribe(
+        "/tracking_status", 5, &RealVehicleNode::TrackingStatusCallback, this);
     enable_subscriber_ = private_node_.subscribe(
         "/execution_enable", 1, &RealVehicleNode::EnableCallback, this);
     command_subscriber_ = private_node_.subscribe(
@@ -146,16 +148,69 @@ class RealVehicleNode {
     }
   }
 
-  void ReachedCallback(const std_msgs::Int32::ConstPtr& message) {
-    if (!message || message->data != active_vehicle_id_ ||
-        manager_.state() != execution::ExperimentManager::State::kTracking)
+  void AppendTaskRecord(const std::string& event,
+                        const std::string& summary_key = "",
+                        const std::string& summary_value = "") {
+    if (active_result_directory_.empty()) return;
+    std::ofstream events(active_result_directory_ + "/events.log",
+                         std::ios::app);
+    if (events)
+      events << ros::Time::now().toSec() << " task=" << manager_.task_id()
+             << " vehicle=" << planned_vehicle_id_ << " " << event << '\n';
+    if (!summary_key.empty()) {
+      std::ofstream summary(active_result_directory_ + "/summary.txt",
+                            std::ios::app);
+      if (summary) summary << summary_key << '=' << summary_value << '\n';
+    }
+  }
+
+  void TrackingStatusCallback(
+      const sandbox_msgs::TrackingStatus::ConstPtr& message) {
+    if (!message || message->task_id != manager_.task_id() ||
+        message->vehicle_id != planned_vehicle_id_ ||
+        message->result_directory != active_result_directory_) {
+      if (message)
+        ROS_WARN("Ignored stale/mismatched tracking status task=%u vehicle=%d",
+                 message->task_id, message->vehicle_id);
       return;
-    PublishEstop(true);
-    manager_.Reached(latest_scene_.start);
-    logger_.Stop();
-    ROS_INFO("Vehicle %d reported goal reached; task %llu completed",
-             active_vehicle_id_,
-             static_cast<unsigned long long>(manager_.task_id()));
+    }
+    if (message->status == sandbox_msgs::TrackingStatus::STARTED) {
+      AppendTaskRecord("tracking started: " + message->reason,
+                       "tracking_start_status", "started");
+      ROS_WARN("Task %u Vehicle%d tracking started: %s", message->task_id,
+               message->vehicle_id, message->reason.c_str());
+    } else if (message->status == sandbox_msgs::TrackingStatus::VALIDATED) {
+      AppendTaskRecord("trajectory validation succeeded: " + message->reason,
+                       "trajectory_validation_status", "passed");
+      ROS_INFO("Task %u Vehicle%d trajectory validated: %s", message->task_id,
+               message->vehicle_id, message->reason.c_str());
+    } else if (message->status ==
+               sandbox_msgs::TrackingStatus::SEGMENT_CHANGED) {
+      AppendTaskRecord("tracking segment changed: " + message->reason);
+      ROS_INFO("Task %u Vehicle%d %s", message->task_id,
+               message->vehicle_id, message->reason.c_str());
+    } else if (message->status == sandbox_msgs::TrackingStatus::FAILED &&
+               manager_.state() ==
+                   execution::ExperimentManager::State::kTracking) {
+      PublishEstop(true);
+      manager_.TrackingFailed();
+      logger_.Stop();
+      AppendTaskRecord("tracking failed: " + message->reason,
+                       "overall_experiment_status", "failed");
+      ROS_ERROR("Task %u Vehicle%d tracking failed; stopped: %s",
+                message->task_id, message->vehicle_id,
+                message->reason.c_str());
+    } else if (message->status == sandbox_msgs::TrackingStatus::REACHED &&
+               manager_.state() ==
+                   execution::ExperimentManager::State::kTracking) {
+      PublishEstop(true);
+      manager_.Reached(latest_scene_.start);
+      logger_.Stop();
+      AppendTaskRecord("tracking reached: " + message->reason,
+                       "overall_experiment_status", "succeeded");
+      ROS_INFO("Task %u Vehicle%d completed: %s", message->task_id,
+               message->vehicle_id, message->reason.c_str());
+    }
   }
 
   void PublishVehicle(const scene::MocapSceneProvider::Status& status,
@@ -287,6 +342,10 @@ class RealVehicleNode {
     if (hybrid && hybrid_generation == active)
       visualizer_.QueueHybridPath(*hybrid);
     if (stage && stage_generation == active) {
+      ROS_INFO("Task %llu Vehicle%d planning stage=%d state=%d: %s",
+               static_cast<unsigned long long>(active), planned_vehicle_id_,
+               static_cast<int>(stage->stage), static_cast<int>(stage->state),
+               stage->message.c_str());
       visualizer_.QueuePlanningStage(
           latest_scene_.bounds, stage->message + " (" +
           std::to_string(stage->total_elapsed) + " s)");
@@ -308,6 +367,16 @@ class RealVehicleNode {
     }
 
     const bool usable = result->success && manager_.frozen_scene_valid();
+    active_result_directory_ = result->result_directory;
+    AppendTaskRecord("planning finished: " + result->status,
+                     "planning_status", usable ? "succeeded" : "failed");
+    if (!usable)
+      AppendTaskRecord("experiment ended before tracking",
+                       "overall_experiment_status", "failed");
+    AppendTaskRecord(result->hybrid_succeeded ? "Hybrid A* succeeded"
+                                              : "Hybrid A* failed");
+    AppendTaskRecord(result->optimization.success ? "NLP optimization succeeded"
+                                                  : "NLP optimization failed");
     if (usable) {
       visualizer_.QueueOptimizedTrajectory(result->optimization.trajectory);
       visualizer_.QueueOptimizedConfigurationPoints(
@@ -334,16 +403,21 @@ class RealVehicleNode {
     std::string error;
     if (!execution::TrajectoryAdapter::Convert(
             result->optimization.trajectory, active_vehicle_id_,
-            static_cast<std::uint32_t>(manager_.task_id()), &trajectory,
+            static_cast<std::uint32_t>(manager_.task_id()),
+            result->result_directory, configuration_.nlp.dmin,
+            static_cast<int>(latest_scene_.obstacles.size()), &trajectory,
             &error)) {
       PublishEstop(true);
       manager_.ForceSafeWait();
+      AppendTaskRecord("trajectory adaptation failed: " + error,
+                       "trajectory_validation_status", "failed: " + error);
       ROS_ERROR("Refusing invalid optimized trajectory: %s", error.c_str());
       return;
     }
     // The real-vehicle PP selects the auto-discovered target from this message.
     // Publish this task exactly once; repeated publication resets PP timing.
     trajectory_publisher_.publish(trajectory);
+    AppendTaskRecord("trajectory published for controller validation");
     real_visualizer_.StartTask(result->optimization.trajectory);
     if (!logger_.Start(result->result_directory, manager_.task_id(),
                        active_vehicle_id_, &error))
@@ -407,7 +481,7 @@ class RealVehicleNode {
   ros::Publisher trajectory_publisher_;
   ros::Publisher object_publisher_;
   ros::Publisher estop_publisher_;
-  ros::Subscriber reached_subscriber_;
+  ros::Subscriber tracking_status_subscriber_;
   ros::Subscriber enable_subscriber_;
   ros::Subscriber command_subscriber_;
   ros::Timer timer_;
@@ -423,6 +497,7 @@ class RealVehicleNode {
   std::uint64_t completed_generation_ = 0;
   int completed_vehicle_id_ = -1;
   int planned_vehicle_id_ = -1;
+  std::string active_result_directory_;
   std::atomic<std::uint64_t> active_generation_{0};
   std::atomic<bool> planning_active_{false};
   std::atomic<bool> shutting_down_{false};

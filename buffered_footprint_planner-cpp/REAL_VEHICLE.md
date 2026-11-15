@@ -237,3 +237,45 @@ gear、换向状态、预瞄点、误差、足迹安全距离、命令和失败�
 本次开发机验证不等同于实车验证。实验数据 `exp(7).zip` 必须放入可访问路径后
 才能进行对应离线回归；未执行该数据回放或现场实车测试时，不得据此宣称跟踪
 精度和换向性能已通过。
+
+### 任务生命周期与结果目录
+
+`TrajectoryPoint.gear` 保存 BME 原始区间 gear；最后一个节点重复末区间 gear。
+方向校验以该字段为主，同时检查区间起点速度和几何位移。BME 使用前向 Euler，
+所以区间终点速度跨零不会改变当前区间方向。冲突诊断包含区间索引、起止速度、
+原始 gear 和几何 gear。
+
+控制器收到轨迹后先进入 `PREPARING`，保持零指令，等待已绑定车辆的新鲜定位和
+完整障碍物集合。准备超时会失败；进入跟踪后定位失联则立即急停。急停中断、
+失败、到达和换段均通过 `/tracking_status` 携带 task/vehicle/result_directory
+反馈，上游只接受与当前任务完全匹配的消息。急停后的旧轨迹不可恢复，必须生成
+单调递增的新任务。
+
+同一次实验的目录结构为：
+
+```text
+results/<timestamp>_real_vehicle_task_N/
+├── scene.yaml / effective_parameters.yaml / effective_controller_parameters.yaml
+├── hybrid_path.csv / initial_guess.csv / optimized_trajectory.csv
+├── embodied_footprints.csv / collision_validation.txt
+├── actual_tracking.csv / control_commands.csv
+├── pp_open_loop.csv / pp_tracking.csv
+├── events.log
+└── summary.txt
+```
+
+PP 不再创建全局 `results/tracking`。规划和控制关键事件追加到 `events.log`；
+`summary.txt` 分别记录 planning、trajectory validation、tracking 和 overall 状态。
+现场典型日志如下：
+
+```text
+Task 12 Vehicle5 planning stage=0 state=1: Hybrid A* succeeded
+[PP] task=12 Vehicle5 trajectory validated: points=129 segments=3
+[PP] task=12 Vehicle5 tracking started
+[PP] task=12 Vehicle5 segment=0 approaching cusp
+[PP] task=12 Vehicle5 reached terminal pose
+```
+
+实时足迹距离仍记录并检查，但停止阈值直接使用该任务规划配置中的 `dmin`，不再
+另设 PP 3 cm 阈值。`dmin` 是规划几何约束，不代表已经完成实车制动距离验证；
+物理急停、定位保护和跟踪异常保护仍然独立有效。
