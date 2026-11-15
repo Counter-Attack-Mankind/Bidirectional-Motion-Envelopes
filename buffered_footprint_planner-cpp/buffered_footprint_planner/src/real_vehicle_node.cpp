@@ -241,7 +241,10 @@ class RealVehicleNode {
       object.x = obstacle.x;
       object.y = obstacle.y;
       object.yaw = obstacle.yaw;
-      for (const auto& corner : obstacle.polygon().points()) {
+      // Keep the Polygon2d alive while iterating over points(); points()
+      // returns a reference owned by the polygon object.
+      const auto polygon = obstacle.polygon();
+      for (const auto& corner : polygon.points()) {
         geometry_msgs::Point32 point;
         point.x = corner.x();
         point.y = corner.y();
