@@ -35,6 +35,10 @@
   </node>
 
   <group if="$(arg enable_execution)">
+    <!-- Keep the reference chassis namespace so chassis_node reads
+         /chassis/chassis_max_steer_angle from the verified gains file. -->
+    <rosparam command="load"
+              file="$(find chassis)/config/vehicle_chassis_gains.yaml"/>
     <node pkg="pure_pursuit" type="pure_pursuit_node"
           name="pure_pursuit_real_vehicle" output="screen" required="true">
       <remap from="/chassis" to="/chassis_raw"/>
@@ -58,7 +62,7 @@
       <param name="command_timeout" value="0.30"/>
     </node>
     <node if="$(arg launch_chassis)" pkg="chassis" type="chassis_node"
-          name="chassis_node" output="screen" required="true">
+          name="chassis" output="screen" required="true">
       <param name="serial_port" value="$(arg serial_port)"/>
     </node>
   </group>

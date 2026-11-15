@@ -40,6 +40,31 @@ catkin_make -DCMAKE_BUILD_TYPE=Release
 `CATKIN_IGNORE`，再执行相同的 `catkin_make`。不要把该删除操作提交回仓库，
 也不需要安装其他依赖、改动底盘算法或刷写 Arduino 固件。
 
+### 底盘故障对照与修复范围
+
+现场已观察到：BME 的 `chassis_node` 能打开 `/dev/ttyUSB0`，并能收到正确的
+非零 `/chassis`，但 Vehicle5 不运动。以下两项对照均能使实体车运动：
+
+- 直接运行 `fork_planner` 的 `realbridge_a1_cycle.launch`；
+- BME 使用 `enable_execution:=true launch_chassis:=false`，另行运行
+  `fork_planner` 的 `chassis_node`。
+
+因此问题范围已缩小到底盘节点或其编译、链接和启动环境，但现有证据不足以确认
+唯一根因。源码修复只同步已验证参考实现中的命令转换：转向先在弧度域按
+`chassis_max_steer_angle` 限制，再转为协议所需角度整数；油门最终边界与
+`0.26 m/s × 100` 对应。串口仍为 57600 波特率，TinyProtocol 消息类型、目标
+车辆字段、校验和、收发回调及 Arduino 固件均未改变。
+
+`real_vehicle.launch` 会加载 `config/vehicle_chassis_gains.yaml`，底盘节点使用
+参考实现一致的 `/chassis` 私有参数命名空间，同时保留可配置的
+`serial_port`。安全链路保持为：
+
+```text
+Pure Pursuit /chassis_raw -> chassis_command_guard -> /chassis -> chassis_node
+```
+
+急停和命令超时仍由 `chassis_command_guard_node` 执行。
+
 ## Nokov 与启动
 
 Nokov 默认端口为 `3883`，更新频率为 `100 Hz`。名称约定：
@@ -99,6 +124,43 @@ roslaunch buffered_footprint_planner real_vehicle.launch server:=NOKOV_IP
 roslaunch buffered_footprint_planner real_vehicle.launch \
   server:=NOKOV_IP enable_execution:=true serial_port:=/dev/ttyUSB0
 ```
+
+### 现场重新编译与产物确认
+
+开发机继续保留两个 `CATKIN_IGNORE`，不强行构建现场依赖。将修改移植到已安装
+VRPN、TinyProtocol/tinyhal 的实验机后执行：
+
+```bash
+cd ~/catkin_ws/src/buffered_footprint_planner-cpp
+rm experiment/vrpn_client_ros/CATKIN_IGNORE
+rm experiment/chassis/CATKIN_IGNORE
+cd ~/catkin_ws
+source /opt/ros/noetic/setup.bash
+catkin_make --force-cmake -DCMAKE_BUILD_TYPE=Release
+source devel/setup.bash
+rospack find chassis
+grep tinyprotocol build/experiment/chassis/CMakeFiles/chassis_node.dir/link.txt
+ldd devel/lib/chassis/chassis_node
+```
+
+这里删除忽略标记只在实验机副本中执行，不提交该删除。链接命令应包含
+`tinyprotocol`，`ldd` 不应出现 `not found`（静态链接时不会单独列出
+`libtinyprotocol`）。参考实现和本工程都由 `chassis_node` 直接链接
+`tinyprotocol`，串口 API 来自现场安装的同一 TinyProtocol/tinyhal 环境。
+
+启动完整系统后检查：
+
+```bash
+roslaunch buffered_footprint_planner real_vehicle.launch \
+  server:=NOKOV_IP enable_execution:=true serial_port:=/dev/ttyUSB0
+rosparam get /chassis/chassis_max_steer_angle
+rosnode info /chassis
+rostopic echo /chassis_raw
+rostopic echo /chassis
+```
+
+启动日志应显示实际串口、`57600` 波特率及加载后的最大转角（当前配置为
+`0.60 rad`）。先架空车轮验证目标 ID、油门、转向符号和急停，再落地测试。
 
 ## 现场检查
 

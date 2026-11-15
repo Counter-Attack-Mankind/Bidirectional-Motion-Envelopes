@@ -92,6 +92,20 @@ roslaunch buffered_footprint_planner real_vehicle.launch \
 软件急停和命令超时保护不能替代物理急停。首次上车必须核对单位、坐标变换、
 后轴参考点、转向符号和限幅，并进行架空轮测试。
 
+## 实车底盘通信
+
+现场曾出现 BME `chassis_node` 已打开 `/dev/ttyUSB0` 且收到非零 `/chassis`，
+但 Vehicle5 不运动的现象；相同车辆可由 `fork_planner` 的
+`realbridge_a1_cycle.launch` 控制，BME 保留规划与控制节点、改用
+`fork_planner` 的 `chassis_node` 时也可运动。这些对照将问题范围限定在 BME
+底盘节点或其运行环境，但不能单凭现象认定唯一根因。
+
+当前底盘命令转换与 `fork_planner` 已验证实现保持一致，并继续支持
+`serial_port` 参数。`real_vehicle.launch` 会加载
+`vehicle_chassis_gains.yaml`，同时保留 `/chassis_raw` → 安全保护 → `/chassis`
+链路。现场重新编译、产物核对和架空轮验证步骤见
+[REAL_VEHICLE.md](REAL_VEHICLE.md)。
+
 ## 实车障碍物标记
 
 实车障碍物默认按 Nokov 刚体位姿和固定长宽建模。每个方盒安装四个反光点：

@@ -6,10 +6,12 @@
 #include <sandbox_msgs/ChassisCommand.h>
 #include <hal/tiny_serial.h>
 #include <TinyProtocol.h>
+#include <algorithm>
 #include <thread>
 #include <functional>
 
 ros::Publisher *velocity_publisher_;
+double chassis_max_steer_angle_ = 0.50;
 
 #define MSG_TYPE_TWIST 0xe1
 #define MSG_TYPE_PID 0xe2
@@ -59,8 +61,13 @@ tiny_serial_handle_t port_handle;
 Tiny::ProtoLight proto;
 
 void cmd_vel_cb(const sandbox_msgs::ChassisCommandConstPtr &msg) {
-  double steering = std::max(std::min(-msg->steering / M_PI * 180, 25.0), -25.0);
-  double throttle = std::max(std::min(msg->throttle * 100, 25.0), -25.0);
+  // Match the chassis conversion used by the verified fork_planner runtime.
+  // Planner and PP limits remain stricter than this final physical boundary.
+  const double steering_rad = std::max(
+      -chassis_max_steer_angle_,
+      std::min(chassis_max_steer_angle_, -msg->steering));
+  double steering = steering_rad / M_PI * 180.0;
+  double throttle = std::max(std::min(msg->throttle * 100, 26.0), -26.0);
   TwistMessage twist = {
       int16_t (throttle),
       int16_t (steering),
@@ -85,6 +92,11 @@ int main(int argc, char **argv) {
   ros::NodeHandle pnh("~");
   std::string serial_port = "/dev/ttyUSB0";
   pnh.param<std::string>("serial_port", serial_port, serial_port);
+  pnh.param("chassis_max_steer_angle", chassis_max_steer_angle_,
+            chassis_max_steer_angle_);
+  chassis_max_steer_angle_ = std::max(0.0, chassis_max_steer_angle_);
+  ROS_INFO("[chassis] serial port: %s, baudrate: 57600, max steering: %.3f rad",
+           serial_port.c_str(), chassis_max_steer_angle_);
 
   // port, baudrate, timeout in milliseconds
   port_handle = tiny_serial_open(serial_port.c_str(), 57600);
