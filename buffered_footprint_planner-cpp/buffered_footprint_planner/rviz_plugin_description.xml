@@ -1,0 +1,10 @@
+<library path="lib/liblocked_top_down_ortho_view_controller">
+  <class name="buffered_footprint_planner/LockedTopDownOrtho"
+         type="buffered_footprint_planner::LockedTopDownOrthoViewController"
+         base_class_type="rviz::ViewController">
+    <description>
+      Top-down orthographic view with rotation fixed at zero while retaining
+      pan and zoom controls.
+    </description>
+  </class>
+</library>

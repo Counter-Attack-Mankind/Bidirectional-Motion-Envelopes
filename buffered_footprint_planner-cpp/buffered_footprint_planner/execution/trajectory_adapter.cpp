@@ -1,8 +1,64 @@
 #include "execution/trajectory_adapter.h"
 
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace execution {
+namespace {
+
+constexpr double kMotionEpsilon = 1e-4;
+constexpr double kVelocityEvidence = 0.01;
+
+bool NormalizeIntervalGears(const optimizer::Trajectory& trajectory,
+                            std::vector<bool>* gears, std::string* error) {
+  gears->clear();
+  gears->reserve(trajectory.intervals.size());
+  std::vector<bool> stationary(trajectory.intervals.size(), false);
+  for (std::size_t i = 0; i < trajectory.intervals.size(); ++i) {
+    const auto& first = trajectory.nodes[i];
+    const auto& second = trajectory.nodes[i + 1];
+    const double dx = second.x - first.x;
+    const double dy = second.y - first.y;
+    const double distance = std::hypot(dx, dy);
+    const bool gear = trajectory.intervals[i].gear;
+    if (distance > kMotionEpsilon) {
+      const double tangent = std::atan2(dy, dx);
+      const double midpoint_yaw = first.theta + 0.5 *
+          std::remainder(second.theta - first.theta, 2.0 * M_PI);
+      const double alignment = std::cos(tangent - midpoint_yaw);
+      if (std::abs(alignment) < 0.25 || (alignment > 0.0) != gear) {
+        if (error) *error = "trajectory interval " + std::to_string(i) +
+                            " displacement conflicts with gear";
+        return false;
+      }
+    }
+    if (std::abs(first.v) > kVelocityEvidence && (first.v > 0.0) != gear) {
+      if (error) *error = "trajectory interval " + std::to_string(i) +
+                          " velocity sign conflicts with gear";
+      return false;
+    }
+    stationary[i] = distance <= kMotionEpsilon &&
+                    std::abs(first.v) <= kVelocityEvidence &&
+                    std::abs(second.v) <= kVelocityEvidence;
+    gears->push_back(gear);
+  }
+  for (std::size_t i = 0; i < gears->size(); ++i) {
+    if (!stationary[i]) continue;
+    std::size_t previous = i;
+    while (previous > 0 && stationary[previous - 1]) --previous;
+    std::size_t next = i + 1;
+    while (next < gears->size() && stationary[next]) ++next;
+    if (previous > 0) {
+      (*gears)[i] = (*gears)[previous - 1];
+    } else if (next < gears->size()) {
+      (*gears)[i] = (*gears)[next];
+    }
+  }
+  return true;
+}
+
+}  // namespace
 
 bool TrajectoryAdapter::Validate(const optimizer::Trajectory& trajectory,
                                  std::string* error) {
@@ -32,7 +88,8 @@ bool TrajectoryAdapter::Validate(const optimizer::Trajectory& trajectory,
       return false;
     }
   }
-  return true;
+  std::vector<bool> normalized_gears;
+  return NormalizeIntervalGears(trajectory, &normalized_gears, error);
 }
 
 bool TrajectoryAdapter::Convert(const optimizer::Trajectory& trajectory,
@@ -55,6 +112,8 @@ bool TrajectoryAdapter::Convert(const optimizer::Trajectory& trajectory,
   message->obstacle_count = obstacle_count;
   message->points.clear();
   message->points.reserve(trajectory.nodes.size());
+  std::vector<bool> interval_gears;
+  if (!NormalizeIntervalGears(trajectory, &interval_gears, error)) return false;
   double time = 0.0;
   for (std::size_t i = 0; i < trajectory.nodes.size(); ++i) {
     if (i > 0) time += trajectory.intervals[i - 1].dt;
@@ -67,7 +126,7 @@ bool TrajectoryAdapter::Convert(const optimizer::Trajectory& trajectory,
     point.acceleration = trajectory.nodes[i].a;
     const std::size_t interval =
         std::min(i, trajectory.intervals.size() - 1);
-    point.gear = trajectory.intervals[interval].gear ? 1 : -1;
+    point.gear = interval_gears[interval] ? 1 : -1;
     message->points.push_back(point);
   }
   return true;

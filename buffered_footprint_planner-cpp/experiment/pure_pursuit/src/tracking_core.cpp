@@ -112,6 +112,7 @@ bool TrackingPath::Build(std::vector<TrackingPoint> points,
 
   points[0].s = 0.0;
   interval_gears_.assign(points.size() - 1, 0);
+  std::vector<bool> stationary_intervals(points.size() - 1, false);
   for (std::size_t i = 0; i + 1 < points.size(); ++i) {
     const double dx = points[i + 1].x - points[i].x;
     const double dy = points[i + 1].y - points[i].y;
@@ -161,6 +162,26 @@ bool TrackingPath::Build(std::vector<TrackingPoint> points,
     // optimized interval gear. Node i+1 may cross zero before the next
     // interval and must never reclassify interval i.
     interval_gears_[i] = original_gear;
+    stationary_intervals[i] =
+        ds <= kMotionEpsilon &&
+        std::abs(points[i].velocity) <= kVelocityEvidence &&
+        std::abs(points[i + 1].velocity) <= kVelocityEvidence;
+  }
+
+  // Preserve dwell time, but attach zero-motion/zero-speed intervals to a
+  // neighboring real motion segment. At a cusp they remain with the incoming
+  // segment, so the actual gear switch occurs at the next moving interval.
+  for (std::size_t i = 0; i < interval_gears_.size(); ++i) {
+    if (!stationary_intervals[i]) continue;
+    std::size_t previous = i;
+    while (previous > 0 && stationary_intervals[previous - 1]) --previous;
+    std::size_t next = i + 1;
+    while (next < interval_gears_.size() && stationary_intervals[next]) ++next;
+    if (previous > 0) {
+      interval_gears_[i] = interval_gears_[previous - 1];
+    } else if (next < interval_gears_.size()) {
+      interval_gears_[i] = interval_gears_[next];
+    }
   }
 
   int begin = 0;

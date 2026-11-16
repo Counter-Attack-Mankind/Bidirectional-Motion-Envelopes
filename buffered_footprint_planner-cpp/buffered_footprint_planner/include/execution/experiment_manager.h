@@ -17,6 +17,7 @@ class ExperimentManager {
     kTracking,
     kCompleted,
     kWaitingForSceneChange,
+    kFailedLocked,
   };
 
   struct Configuration {
@@ -34,11 +35,12 @@ class ExperimentManager {
   void Observe(const scene::SceneSnapshot& snapshot, bool data_valid,
                std::uint64_t revision, double now);
   bool BeginPlanning(scene::SceneSnapshot* frozen, std::uint64_t* generation);
-  void PlanningFinished(bool success, bool execute);
+  void PlanningFinished(bool success, bool execute,
+                        const std::string& failure_reason = "planning_failed");
   void Reached(const scene::Pose2d& stopped_pose);
-  void TrackingFailed();
-  void ForceSafeWait();
-  void AbortTask();
+  void TrackingFailed(const std::string& reason = "tracking_failed");
+  void ForceSafeWait(const std::string& reason = "safety_protection");
+  void AbortTask(const std::string& reason = "task_aborted");
   void InitializeTaskSequence(std::uint64_t last_task_id);
 
   static double ObstacleBoundaryDistance(
@@ -46,6 +48,8 @@ class ExperimentManager {
 
   State state() const { return state_; }
   bool frozen_scene_valid() const { return frozen_scene_valid_; }
+  bool task_completed() const { return task_completed_; }
+  const std::string& failure_reason() const { return failure_reason_; }
   std::uint64_t task_id() const { return task_id_; }
   std::string StateName() const;
 
@@ -53,6 +57,7 @@ class ExperimentManager {
   bool ObstaclesMoved(const scene::SceneSnapshot& lhs,
                       const scene::SceneSnapshot& rhs,
                       double boundary_threshold) const;
+  void EnterFailedLocked(const std::string& reason);
 
   Configuration configuration_;
   State state_ = State::kWaitingForData;
@@ -62,7 +67,9 @@ class ExperimentManager {
   scene::Pose2d stopped_pose_;
   bool have_latest_ = false;
   bool have_stopped_pose_ = false;
+  bool task_completed_ = false;
   bool frozen_scene_valid_ = false;
+  std::string failure_reason_;
   double stable_since_ = 0.0;
   std::uint64_t latest_revision_ = 0;
   std::uint64_t frozen_revision_ = 0;

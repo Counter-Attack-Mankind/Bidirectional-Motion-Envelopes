@@ -44,7 +44,7 @@ Visualization Manager:
   Views:
     Current:
       Angle: 0
-      Class: rviz/TopDownOrtho
+      Class: buffered_footprint_planner/LockedTopDownOrtho
       Name: Current View
       Near Clip Distance: 0.01
       Scale: 90

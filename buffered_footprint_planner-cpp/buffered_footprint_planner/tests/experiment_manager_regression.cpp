@@ -41,6 +41,8 @@ int main() {
   scene.start.x += 0.02;
   planning_manager.Observe(scene, true, 2, 3.2);
   assert(!planning_manager.frozen_scene_valid());
+  assert(planning_manager.state() ==
+         execution::ExperimentManager::State::kFailedLocked);
 
   execution::ExperimentManager tracking_manager(config);
   scene = MakeScene();
@@ -53,7 +55,7 @@ int main() {
   tracking_manager.Observe(scene, true, 3, 3.3);
   assert(!tracking_manager.frozen_scene_valid());
   assert(tracking_manager.state() ==
-         execution::ExperimentManager::State::kWaitingForSceneChange);
+         execution::ExperimentManager::State::kFailedLocked);
 
   execution::ExperimentManager controller_failure(config);
   scene = MakeScene();
@@ -62,7 +64,7 @@ int main() {
   controller_failure.TrackingFailed();
   assert(!controller_failure.frozen_scene_valid());
   assert(controller_failure.state() ==
-         execution::ExperimentManager::State::kWaitingForSceneChange);
+         execution::ExperimentManager::State::kFailedLocked);
 
   // Geometrically identical OBBs must not look moved merely because minimum
   // area fitting selected an equivalent heading/corner ordering.
@@ -81,7 +83,7 @@ int main() {
   marker_failure.Observe(scene, false, 1, 3.2);
   assert(!marker_failure.frozen_scene_valid());
   assert(marker_failure.state() ==
-         execution::ExperimentManager::State::kWaitingForData);
+         execution::ExperimentManager::State::kFailedLocked);
 
   execution::ExperimentManager revoked(config);
   scene = MakeScene();
@@ -89,7 +91,7 @@ int main() {
   revoked.AbortTask();
   assert(!revoked.frozen_scene_valid());
   assert(revoked.state() ==
-         execution::ExperimentManager::State::kWaitingForData);
+         execution::ExperimentManager::State::kFailedLocked);
 
   execution::ExperimentManager rounds(config);
   scene = MakeScene();
@@ -99,11 +101,14 @@ int main() {
   std::uint64_t generation = 0;
   assert(rounds.BeginPlanning(&frozen, &generation));
   assert(generation == 1);
-  rounds.PlanningFinished(true, false);
+  rounds.PlanningFinished(true, true);
+  rounds.Reached(scene.start);
   assert(rounds.state() == execution::ExperimentManager::State::kCompleted);
+  assert(rounds.task_completed());
   scene.start.x += config.rearm_distance + 0.01;
   rounds.Observe(scene, true, 2, 3.2);
   rounds.Observe(scene, true, 2, 6.3);
+  assert(!rounds.task_completed());
   assert(rounds.BeginPlanning(&frozen, &generation));
   assert(generation == 2 && frozen.task_id == 2);
 
@@ -112,11 +117,12 @@ int main() {
   obstacle_round.Observe(scene, true, 1, 0.0);
   obstacle_round.Observe(scene, true, 1, 3.1);
   assert(obstacle_round.BeginPlanning(&frozen, &generation));
-  obstacle_round.PlanningFinished(true, false);
+  obstacle_round.PlanningFinished(true, true);
+  obstacle_round.Reached(scene.start);
   scene.obstacles[0].x += 0.02;
   obstacle_round.Observe(scene, true, 2, 3.2);
   obstacle_round.Observe(scene, true, 2, 6.3);
   assert(obstacle_round.state() ==
-         execution::ExperimentManager::State::kReadyToPlan);
+         execution::ExperimentManager::State::kCompleted);
   return 0;
 }

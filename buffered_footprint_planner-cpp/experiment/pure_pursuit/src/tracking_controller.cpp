@@ -322,6 +322,7 @@ class TrackingController {
     ROS_ERROR("[PP][FAILED] task=%d Vehicle%d: %s", task_id_,
               tracking_object_, reason.c_str());
     Log(pure_pursuit::TrackingPoint(), 0.0, 0.0, 0.0, 0.0, reason);
+    CloseLogs();
   }
 
   void EstopCallback(const std_msgs::BoolConstPtr& message) {
@@ -608,6 +609,7 @@ class TrackingController {
         trajectory_armed_ = false;
         PublishStatus(sandbox_msgs::TrackingStatus::REACHED,
                       "terminal pose and stationary state confirmed");
+        CloseLogs();
         ROS_INFO("[PP] task=%d Vehicle%d reached terminal pose",
                  task_id_, tracking_object_);
         return false;
@@ -822,6 +824,10 @@ class TrackingController {
                  << "collision_stop_condition: footprint_overlap\n";
     ROS_WARN("[PP] task=%d Vehicle%d logs=%s", task_id_, tracking_object_,
              result_directory_.c_str());
+  }
+  void CloseLogs() {
+    if (open_loop_log_.is_open()) open_loop_log_.close();
+    if (tracking_log_.is_open()) tracking_log_.close();
   }
   void LogOpenLoop() {
     if (!open_loop_log_) return;

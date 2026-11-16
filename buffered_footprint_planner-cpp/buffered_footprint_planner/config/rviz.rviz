@@ -56,13 +56,13 @@ Visualization Manager:
   Views:
     Current:
       Angle: 0
-      Class: rviz/TopDownOrtho
+      Class: buffered_footprint_planner/LockedTopDownOrtho
       Name: Current View
       Near Clip Distance: 0.01
       Scale: 90
       Target Frame: <Fixed Frame>
-      X: 2.25
-      Y: 1.25
+      X: 1.25
+      Y: 2.25
     Saved: ~
 Window Geometry:
   Height: 900

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <functional>
@@ -90,6 +91,9 @@ class RealVehicleNode {
         "/object", 5, false);
     estop_publisher_ = private_node_.advertise<std_msgs::Bool>(
         "/estop", 1, true);
+    safety_command_publisher_ =
+        private_node_.advertise<sandbox_msgs::ChassisCommand>(
+            "/chassis_raw", 1, true);
     tracking_status_subscriber_ = private_node_.subscribe(
         "/tracking_status", 5, &RealVehicleNode::TrackingStatusCallback, this);
     enable_subscriber_ = private_node_.subscribe(
@@ -134,9 +138,9 @@ class RealVehicleNode {
     return config;
   }
 
-  void PublishEstop(bool value) {
+  void PublishEstop(bool value, bool force = false) {
     if (!estop_publisher_) return;
-    if (estop_published_ && estop_active_ == value) return;
+    if (!force && estop_published_ && estop_active_ == value) return;
     std_msgs::Bool message;
     message.data = value;
     estop_publisher_.publish(message);
@@ -144,14 +148,60 @@ class RealVehicleNode {
     estop_published_ = true;
   }
 
+  const scene::Pose2d* LastValidPose() const {
+    return have_last_valid_pose_ ? &last_valid_pose_ : nullptr;
+  }
+
+  void PublishSafetyHold() {
+    PublishEstop(true, true);
+    if (!safety_command_publisher_) return;
+    sandbox_msgs::ChassisCommand command;
+    command.target = planned_vehicle_id_ >= 0
+        ? planned_vehicle_id_ : std::max(0, active_vehicle_id_);
+    command.throttle = 0.0;
+    command.steering = 0.0;
+    safety_command_publisher_.publish(command);
+  }
+
+  void FinishActiveTask(const std::string& status,
+                        const std::string& reason, bool succeeded) {
+    if (task_finalized_ || active_result_directory_.empty()) return;
+    task_finalized_ = true;
+    PublishSafetyHold();
+    logger_.Stop();
+    paper_exporter_.FinishTask(
+        succeeded ? status : status + ":" + reason, LastValidPose());
+    AppendTaskRecord("task ended: status=" + status + " reason=" + reason,
+                     "overall_experiment_status",
+                     succeeded ? "succeeded" : "failed");
+    AppendTaskRecord("terminal reason: " + reason,
+                     "task_terminal_reason", reason);
+    if (have_last_valid_pose_) {
+      AppendTaskRecord("last valid mocap pose x=" +
+                           std::to_string(last_valid_pose_.x) + " y=" +
+                           std::to_string(last_valid_pose_.y) + " yaw=" +
+                           std::to_string(last_valid_pose_.yaw));
+    }
+  }
+
+  void LockFailure(const std::string& reason) {
+    if (manager_.state() !=
+        execution::ExperimentManager::State::kFailedLocked) {
+      manager_.ForceSafeWait(reason);
+    }
+    planning_cancel_requested_ = true;
+    PublishSafetyHold();
+    FinishActiveTask("failed_locked", reason, false);
+  }
+
   void EnableCallback(const std_msgs::Bool::ConstPtr& message) {
     execution_enabled_ = message && message->data;
     if (!execution_enabled_) {
-      PublishEstop(true);
-      manager_.AbortTask();
-      logger_.Stop();
-      if (paper_exporter_.active())
-        paper_exporter_.FinishTask("execution_disabled", &latest_scene_.start);
+      manager_.AbortTask("execution_disabled_by_operator");
+      planning_cancel_requested_ = true;
+      PublishSafetyHold();
+      FinishActiveTask("execution_disabled",
+                       "execution_disabled_by_operator", false);
       ROS_WARN("Real vehicle execution disabled at runtime");
     } else {
       ROS_WARN("Real vehicle execution authorized; the current state and next "
@@ -185,6 +235,12 @@ class RealVehicleNode {
                  message->task_id, message->vehicle_id);
       return;
     }
+    if (manager_.state() !=
+        execution::ExperimentManager::State::kTracking) {
+      ROS_WARN("Ignored tracking status for inactive task=%u vehicle=%d",
+               message->task_id, message->vehicle_id);
+      return;
+    }
     if (message->status == sandbox_msgs::TrackingStatus::STARTED) {
       AppendTaskRecord("tracking started: " + message->reason,
                        "tracking_start_status", "started");
@@ -200,27 +256,20 @@ class RealVehicleNode {
       AppendTaskRecord("tracking segment changed: " + message->reason);
       ROS_INFO("Task %u Vehicle%d %s", message->task_id,
                message->vehicle_id, message->reason.c_str());
-    } else if (message->status == sandbox_msgs::TrackingStatus::FAILED &&
-               manager_.state() ==
-                   execution::ExperimentManager::State::kTracking) {
-      PublishEstop(true);
-      manager_.TrackingFailed();
-      logger_.Stop();
-      paper_exporter_.FinishTask("tracking_failed", &latest_scene_.start);
-      AppendTaskRecord("tracking failed: " + message->reason,
-                       "overall_experiment_status", "failed");
+    } else if (message->status == sandbox_msgs::TrackingStatus::FAILED) {
+      manager_.TrackingFailed("tracking_failed:" + message->reason);
+      planning_cancel_requested_ = true;
+      FinishActiveTask("tracking_failed", message->reason, false);
       ROS_ERROR("Task %u Vehicle%d tracking failed; stopped: %s",
                 message->task_id, message->vehicle_id,
                 message->reason.c_str());
-    } else if (message->status == sandbox_msgs::TrackingStatus::REACHED &&
-               manager_.state() ==
-                   execution::ExperimentManager::State::kTracking) {
-      PublishEstop(true);
-      manager_.Reached(latest_scene_.start);
-      logger_.Stop();
-      paper_exporter_.FinishTask("reached", &latest_scene_.start);
-      AppendTaskRecord("tracking reached: " + message->reason,
-                       "overall_experiment_status", "succeeded");
+    } else if (message->status == sandbox_msgs::TrackingStatus::REACHED) {
+      if (!have_last_valid_pose_) {
+        LockFailure("reached_without_valid_mocap_pose");
+        return;
+      }
+      manager_.Reached(last_valid_pose_);
+      FinishActiveTask("reached", message->reason, true);
       ROS_INFO("Task %u Vehicle%d completed: %s", message->task_id,
                message->vehicle_id, message->reason.c_str());
     }
@@ -281,6 +330,10 @@ class RealVehicleNode {
     if (!manager_.BeginPlanning(&frozen, &generation)) return;
     if (planning_thread_.joinable()) planning_thread_.join();
     planning_active_ = true;
+    planning_cancel_requested_ = false;
+    task_finalized_ = false;
+    trajectory_published_ = false;
+    active_result_directory_.clear();
     active_generation_ = generation;
     planned_vehicle_id_ = active_vehicle_id_;
     planned_scene_ = frozen;
@@ -313,6 +366,7 @@ class RealVehicleNode {
                   : planning_platform::PlanningPipeline::HybridProgressCallback{},
               [this, generation]() {
                 return shutting_down_.load() || !ros::ok() ||
+                       planning_cancel_requested_.load() ||
                        generation != active_generation_.load();
               },
               [this, generation](planning_platform::PlanningStageUpdate update) {
@@ -372,11 +426,15 @@ class RealVehicleNode {
         (stage && stage_generation == active)) visualizer_.Trigger();
     if (!result) return;
 
-    if (!execution::IsCurrentTask(
-            result_generation, result_vehicle, active, planned_vehicle_id_,
-            active_vehicle_id_,
-            manager_.state() ==
-                execution::ExperimentManager::State::kPlanning)) {
+    const auto manager_state = manager_.state();
+    const bool result_state_valid =
+        manager_state == execution::ExperimentManager::State::kPlanning ||
+        manager_state == execution::ExperimentManager::State::kFailedLocked;
+    const bool active_vehicle_matches =
+        result_vehicle == active_vehicle_id_ ||
+        manager_state == execution::ExperimentManager::State::kFailedLocked;
+    if (result_generation != active || result_vehicle != planned_vehicle_id_ ||
+        !active_vehicle_matches || !result_state_valid) {
       ROS_WARN("Discarded stale planning result generation=%llu vehicle=%d",
                static_cast<unsigned long long>(result_generation),
                result_vehicle);
@@ -391,6 +449,11 @@ class RealVehicleNode {
             result->success ? &result->optimization.trajectory : nullptr,
             result->status, &paper_error)) {
       ROS_ERROR("Cannot export paper data: %s", paper_error.c_str());
+    }
+    if (manager_state ==
+        execution::ExperimentManager::State::kFailedLocked) {
+      FinishActiveTask("failed_locked", manager_.failure_reason(), false);
+      return;
     }
     AppendTaskRecord("planning finished: " + result->status,
                      "planning_status", usable ? "succeeded" : "failed");
@@ -408,11 +471,14 @@ class RealVehicleNode {
       visualizer_.Trigger();
     }
     const bool execute = usable && execution_enabled_;
-    manager_.PlanningFinished(usable, execute);
+    manager_.PlanningFinished(usable, execute,
+                              usable ? std::string() : result->status);
     if (!execute) {
-      PublishEstop(true);
-      paper_exporter_.FinishTask(usable ? "not_executed" : "planning_failed",
-                                 nullptr);
+      if (!usable) {
+        FinishActiveTask("planning_failed", result->status, false);
+      } else {
+        FinishActiveTask("not_executed", "execution_not_authorized", false);
+      }
       if (usable) {
         std::string playback_error;
         if (!playback_.Start(result->optimization.trajectory, &playback_error))
@@ -433,9 +499,8 @@ class RealVehicleNode {
             result->result_directory,
             static_cast<int>(latest_scene_.obstacles.size()), &trajectory,
             &error)) {
-      PublishEstop(true);
-      manager_.ForceSafeWait();
-      paper_exporter_.FinishTask("trajectory_adaptation_failed", nullptr);
+      manager_.ForceSafeWait("trajectory_adaptation_failed:" + error);
+      FinishActiveTask("trajectory_adaptation_failed", error, false);
       AppendTaskRecord("trajectory adaptation failed: " + error,
                        "trajectory_validation_status", "failed: " + error);
       ROS_ERROR("Refusing invalid optimized trajectory: %s", error.c_str());
@@ -443,7 +508,12 @@ class RealVehicleNode {
     }
     // The real-vehicle PP selects the auto-discovered target from this message.
     // Publish this task exactly once; repeated publication resets PP timing.
+    if (trajectory_published_) {
+      LockFailure("duplicate_trajectory_publication_prevented");
+      return;
+    }
     trajectory_publisher_.publish(trajectory);
+    trajectory_published_ = true;
     AppendTaskRecord("trajectory published for controller validation");
     real_visualizer_.StartTask(result->optimization.trajectory);
     if (!logger_.Start(result->result_directory, manager_.task_id(),
@@ -461,9 +531,15 @@ class RealVehicleNode {
     const bool ready = mocap_.Snapshot(&snapshot, &status);
     latest_scene_ = snapshot;
     active_vehicle_id_ = status.vehicle_id;
+    if (ready && status.vehicle_fresh && status.vehicle_id >= 0) {
+      last_valid_pose_ = snapshot.start;
+      have_last_valid_pose_ = true;
+    }
     PublishVehicle(status, snapshot);
     PublishObstacles(snapshot);
+    const auto previous_state = manager_.state();
     manager_.Observe(snapshot, ready, status.revision, ros::WallTime::now().toSec());
+    const auto current_state = manager_.state();
 
     visualizer_.QueueMap(snapshot);
     for (std::size_t i = 0; i < snapshot.obstacles.size(); ++i)
@@ -476,19 +552,22 @@ class RealVehicleNode {
         snapshot.bounds, ready ? manager_.StateName() : status.message);
     visualizer_.Trigger();
 
-    if (!ready || !manager_.frozen_scene_valid()) {
+    if (current_state ==
+        execution::ExperimentManager::State::kFailedLocked) {
+      planning_cancel_requested_ = true;
+      PublishSafetyHold();
+      if (previous_state != current_state && !active_result_directory_.empty())
+        FinishActiveTask("failed_locked", manager_.failure_reason(), false);
+    } else if (!ready || !manager_.frozen_scene_valid()) {
       PublishEstop(true);
-      if (planning_active_ &&
-          manager_.state() != execution::ExperimentManager::State::kPlanning)
-        active_generation_.fetch_add(1);
     }
-    if (ready && manager_.state() ==
+    if (ready && current_state ==
                      execution::ExperimentManager::State::kTracking) {
       real_visualizer_.Update(snapshot.start);
       logger_.LogPose(ros::Time::now().toSec(), snapshot.start);
       paper_exporter_.LogClosedLoop(snapshot.start);
     }
-    if (manager_.state() ==
+    if (current_state ==
             execution::ExperimentManager::State::kReadyToPlan &&
         !planning_active_) {
       StartPlanning();
@@ -508,9 +587,11 @@ class RealVehicleNode {
   visualization::RealVehicleVisualizer real_visualizer_;
   scene::SceneSnapshot latest_scene_;
   scene::SceneSnapshot planned_scene_;
+  scene::Pose2d last_valid_pose_;
   ros::Publisher trajectory_publisher_;
   ros::Publisher object_publisher_;
   ros::Publisher estop_publisher_;
+  ros::Publisher safety_command_publisher_;
   ros::Subscriber tracking_status_subscriber_;
   ros::Subscriber enable_subscriber_;
   ros::Subscriber command_subscriber_;
@@ -530,11 +611,15 @@ class RealVehicleNode {
   std::string active_result_directory_;
   std::atomic<std::uint64_t> active_generation_{0};
   std::atomic<bool> planning_active_{false};
+  std::atomic<bool> planning_cancel_requested_{false};
   std::atomic<bool> shutting_down_{false};
   bool execution_enabled_ = false;
   bool show_hybrid_search_ = true;
   bool estop_active_ = true;
   bool estop_published_ = false;
+  bool have_last_valid_pose_ = false;
+  bool task_finalized_ = true;
+  bool trajectory_published_ = false;
   int active_vehicle_id_ = -1;
 };
 

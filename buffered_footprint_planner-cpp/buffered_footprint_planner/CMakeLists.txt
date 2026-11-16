@@ -14,12 +14,15 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CASADI REQUIRED casadi)
 find_package(yaml-cpp REQUIRED)
+find_package(Qt5 REQUIRED COMPONENTS Widgets)
 
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   interactive_markers
   message_generation
+  pluginlib
   roscpp
+  rviz
   sandbox_msgs
   std_msgs
   tf2
@@ -40,7 +43,7 @@ catkin_package(
             paper_data_exporter
   CATKIN_DEPENDS geometry_msgs message_runtime roscpp std_msgs tf2
                  tf2_geometry_msgs visualization_msgs interactive_markers
-                 sandbox_msgs
+                 sandbox_msgs pluginlib rviz
 )
 
 include_directories(
@@ -95,6 +98,11 @@ target_link_libraries(visualization_plot common_math common_util ${catkin_LIBRAR
 add_library(scene_visualizer visualize/scene_visualizer.cpp)
 target_link_libraries(scene_visualizer visualization_plot hybrid_astar scene_core
                       ${catkin_LIBRARIES})
+
+add_library(locked_top_down_ortho_view_controller
+  visualize/locked_top_down_ortho_view_controller.cpp)
+target_link_libraries(locked_top_down_ortho_view_controller
+                      ${catkin_LIBRARIES} Qt5::Widgets)
 
 add_library(trajectory_player visualize/trajectory_player.cpp)
 target_link_libraries(trajectory_player common_math ${catkin_LIBRARIES})
@@ -247,6 +255,7 @@ endif()
 
 install(TARGETS common_math common_util hybrid_astar hybrid_search_adapter visualization_plot
                 scene_visualizer trajectory_player footprint_visualizer
+                locked_top_down_ortho_view_controller
                 swept_area_visualizer body_history_visualizer
                 trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
                 real_vehicle_visualizer
@@ -261,5 +270,7 @@ install(TARGETS common_math common_util hybrid_astar hybrid_search_adapter visua
 
 install(DIRECTORY include/ DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
 install(DIRECTORY config launch DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+install(FILES rviz_plugin_description.xml
+        DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 install(DIRECTORY scene/tasks
         DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/scene)

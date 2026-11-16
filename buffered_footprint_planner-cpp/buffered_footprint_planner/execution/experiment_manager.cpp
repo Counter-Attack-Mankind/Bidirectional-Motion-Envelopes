@@ -72,12 +72,14 @@ void ExperimentManager::Observe(const scene::SceneSnapshot& snapshot,
   latest_ = snapshot;
   latest_revision_ = revision;
   have_latest_ = true;
+  if (state_ == State::kFailedLocked) return;
   if (!data_valid) {
     frozen_scene_valid_ = false;
-    if (state_ == State::kPlanning || state_ == State::kTracking)
+    if (state_ == State::kPlanning || state_ == State::kTracking) {
+      EnterFailedLocked("mocap_data_invalid");
+    } else if (state_ != State::kCompleted) {
       state_ = State::kWaitingForData;
-    else if (state_ != State::kCompleted)
-      state_ = State::kWaitingForData;
+    }
     return;
   }
   if (state_ == State::kWaitingForData) {
@@ -94,6 +96,7 @@ void ExperimentManager::Observe(const scene::SceneSnapshot& snapshot,
         ObstaclesMoved(snapshot, frozen_,
                        configuration_.frozen_obstacle_boundary_threshold)) {
       frozen_scene_valid_ = false;
+      EnterFailedLocked("scene_moved_during_planning");
     }
     return;
   }
@@ -103,16 +106,14 @@ void ExperimentManager::Observe(const scene::SceneSnapshot& snapshot,
     if (ObstaclesMoved(snapshot, frozen_,
                        configuration_.frozen_obstacle_boundary_threshold)) {
       frozen_scene_valid_ = false;
-      state_ = State::kWaitingForSceneChange;
+      EnterFailedLocked("obstacle_moved_during_tracking");
     }
     return;
   }
   if (state_ == State::kCompleted) {
-    if (have_stopped_pose_ &&
-        (PoseDistance(snapshot.start, stopped_pose_) >=
-             configuration_.rearm_distance ||
-         ObstaclesMoved(snapshot, frozen_,
-                        configuration_.frozen_obstacle_boundary_threshold))) {
+    if (task_completed_ && have_stopped_pose_ &&
+        PoseDistance(snapshot.start, stopped_pose_) >=
+            configuration_.rearm_distance) {
       stable_reference_ = snapshot;
       stable_since_ = now;
       state_ = State::kWaitingForStationary;
@@ -131,6 +132,12 @@ void ExperimentManager::Observe(const scene::SceneSnapshot& snapshot,
     return;
   }
   if (state_ != State::kWaitingForStationary) return;
+  if (task_completed_ && have_stopped_pose_ &&
+      PoseDistance(snapshot.start, stopped_pose_) <
+          configuration_.rearm_distance) {
+    state_ = State::kCompleted;
+    return;
+  }
   const bool moving =
       PoseDistance(snapshot.start, stable_reference_.start) >
           configuration_.vehicle_stationary_position_threshold ||
@@ -142,6 +149,7 @@ void ExperimentManager::Observe(const scene::SceneSnapshot& snapshot,
     stable_reference_ = snapshot;
     stable_since_ = now;
   } else if (now - stable_since_ >= configuration_.stationary_duration) {
+    task_completed_ = false;
     state_ = State::kReadyToPlan;
   }
 }
@@ -161,40 +169,43 @@ bool ExperimentManager::BeginPlanning(scene::SceneSnapshot* frozen,
   return true;
 }
 
-void ExperimentManager::PlanningFinished(bool success, bool execute) {
+void ExperimentManager::PlanningFinished(bool success, bool execute,
+                                         const std::string& failure_reason) {
   if (state_ != State::kPlanning) return;
   if (!success || !frozen_scene_valid_) {
-    state_ = State::kWaitingForSceneChange;
+    EnterFailedLocked(failure_reason);
     return;
   }
   state_ = execute ? State::kTracking : State::kCompleted;
-  if (!execute) {
-    stopped_pose_ = latest_.start;
-    have_stopped_pose_ = true;
-  }
+  if (!execute) task_completed_ = false;
 }
 
 void ExperimentManager::Reached(const scene::Pose2d& stopped_pose) {
   if (state_ != State::kTracking) return;
   stopped_pose_ = stopped_pose;
   have_stopped_pose_ = true;
+  task_completed_ = true;
   state_ = State::kCompleted;
 }
 
-void ExperimentManager::TrackingFailed() {
+void ExperimentManager::EnterFailedLocked(const std::string& reason) {
+  task_completed_ = false;
+  frozen_scene_valid_ = false;
+  failure_reason_ = reason;
+  state_ = State::kFailedLocked;
+}
+
+void ExperimentManager::TrackingFailed(const std::string& reason) {
   if (state_ != State::kTracking) return;
-  frozen_scene_valid_ = false;
-  state_ = State::kWaitingForSceneChange;
+  EnterFailedLocked(reason);
 }
 
-void ExperimentManager::ForceSafeWait() {
-  frozen_scene_valid_ = false;
-  state_ = State::kWaitingForData;
+void ExperimentManager::ForceSafeWait(const std::string& reason) {
+  EnterFailedLocked(reason);
 }
 
-void ExperimentManager::AbortTask() {
-  frozen_scene_valid_ = false;
-  state_ = State::kWaitingForData;
+void ExperimentManager::AbortTask(const std::string& reason) {
+  EnterFailedLocked(reason);
 }
 
 std::string ExperimentManager::StateName() const {
@@ -204,8 +215,11 @@ std::string ExperimentManager::StateName() const {
     case State::kReadyToPlan: return "Ready to plan";
     case State::kPlanning: return "Planning";
     case State::kTracking: return "Tracking";
-    case State::kCompleted: return "Completed; move vehicle to rearm";
+    case State::kCompleted:
+      return task_completed_ ? "Completed; move vehicle to rearm"
+                             : "Planning-only task completed; restart required";
     case State::kWaitingForSceneChange: return "Waiting for scene change";
+    case State::kFailedLocked: return "FAILED LOCKED: " + failure_reason_;
   }
   return "Unknown";
 }
