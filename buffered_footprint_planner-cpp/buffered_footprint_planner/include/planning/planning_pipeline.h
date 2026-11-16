@@ -4,6 +4,7 @@
 #include <string>
 
 #include "planning/hybrid_astar/hybrid_a_star.h"
+#include "planning/hybrid_search_adapter.h"
 #include "optimizer/initial_guess.h"
 #include "optimizer/trajectory.h"
 #include "planning/planning_config_loader.h"
@@ -37,6 +38,11 @@ struct PlanningRunResult {
   std::string status;
   std::string result_directory;
   double hybrid_elapsed = 0.0;
+  planning::HybridSearchDirection hybrid_search_direction =
+      planning::HybridSearchDirection::kStartToGoal;
+  ParkingPlannerConfig hybrid_effective_config;
+  std::size_t hybrid_gear_switch_count = 0;
+  bool hybrid_steering_recomputed = false;
   planning::HybridAStarStatistics hybrid_statistics;
   double initial_guess_elapsed = 0.0;
   planning::HybridAStartResult hybrid_path;

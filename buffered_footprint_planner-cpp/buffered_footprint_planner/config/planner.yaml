@@ -14,6 +14,7 @@ min_phi: -0.3491
 max_omega: 0.30
 
 # Bidirectional Hybrid A* settings.
+hybrid_search_direction: goal_to_start
 xy_grid_resolution: 0.02
 phi_grid_resolution: 0.05
 next_node_num: 20

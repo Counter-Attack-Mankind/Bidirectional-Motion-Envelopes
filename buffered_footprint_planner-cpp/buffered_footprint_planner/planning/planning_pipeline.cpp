@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "planning/experiment_logger.h"
+#include "planning/hybrid_search_adapter.h"
 #include "optimizer/footprint_nlp.h"
 
 namespace planning_platform {
@@ -29,6 +30,9 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
                                         CancellationCallback cancellation,
                                         StageCallback stage_callback) const {
   PlanningRunResult result;
+  result.hybrid_search_direction = configuration_.hybrid_search_direction;
+  result.hybrid_effective_config = planning::AdaptHybridSearchConfig(
+      configuration_.planner, configuration_.hybrid_search_direction);
   const auto pipeline_begin = std::chrono::steady_clock::now();
   auto notify_stage = [&](PlanningStage stage, PlanningStageState state,
                           double stage_elapsed, const std::string& message) {
@@ -71,31 +75,39 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
 
   ParkingPlannerConfig planner_config = configuration_.planner;
   planner_config.xy_bounds = snapshot.bounds;
-  planning::HybridAStar planner(planner_config, configuration_.vehicle,
-                                snapshot.obstacle_polygons(),
-                                configuration_.nlp.save_debug_data);
+  planning::HybridSearchAdapter search_adapter(
+      configuration_.hybrid_search_direction, planner_config,
+      configuration_.vehicle, snapshot.obstacle_polygons(),
+      configuration_.nlp.save_debug_data);
   const auto hybrid_begin = std::chrono::steady_clock::now();
   notify_stage(PlanningStage::kHybridAStar, PlanningStageState::kRunning, 0.0,
-               "Hybrid A*");
+               std::string("Hybrid A* (") +
+                   planning::HybridSearchDirectionName(
+                       configuration_.hybrid_search_direction) +
+                   ")");
   auto progress_forwarder =
       [&, hybrid_progress = std::move(hybrid_progress)](
           planning::HybridSearchProgress progress) mutable {
         if (hybrid_progress) hybrid_progress(std::move(progress));
       };
-  result.hybrid_succeeded = planner.Plan(
-      snapshot.start.x, snapshot.start.y, snapshot.start.yaw,
-      snapshot.goal.x, snapshot.goal.y, snapshot.goal.yaw,
-      &result.hybrid_path, std::move(progress_forwarder),
+  planning::HybridSearchAdapterResult search_result = search_adapter.Search(
+      snapshot.start, snapshot.goal, std::move(progress_forwarder),
       std::move(cancellation));
   result.hybrid_elapsed = SecondsSince(hybrid_begin);
-  result.hybrid_statistics = planner.statistics();
-  result.hybrid_timed_out = planner.timed_out();
+  result.hybrid_succeeded = search_result.succeeded;
+  result.hybrid_timed_out = search_result.timed_out;
+  result.hybrid_statistics = search_result.statistics;
+  result.hybrid_effective_config = search_result.effective_config;
+  result.hybrid_gear_switch_count = search_result.gear_switch_count;
+  result.hybrid_steering_recomputed = search_result.steering_recomputed;
+  result.hybrid_path = std::move(search_result.path);
   if (!result.hybrid_succeeded) {
     result.status = result.hybrid_timed_out
         ? "Hybrid A* timeout after " + std::to_string(result.hybrid_elapsed) +
-              " s (" + std::to_string(planner.timeout_seconds()) +
+              " s (" + std::to_string(search_result.timeout_seconds) +
               " s limit)"
-        : "Hybrid A* failed";
+        : search_result.error.empty() ? "Hybrid A* failed"
+                                      : search_result.error;
     notify_stage(PlanningStage::kHybridAStar, PlanningStageState::kFailed,
                  result.hybrid_elapsed, result.status);
     logger.WriteSummary(result.result_directory, mode, snapshot.task_id, result,

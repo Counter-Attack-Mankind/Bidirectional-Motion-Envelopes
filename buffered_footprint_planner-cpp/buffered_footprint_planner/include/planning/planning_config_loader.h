@@ -7,6 +7,7 @@
 
 #include "planning/hybrid_astar/parking_planner_config.h"
 #include "planning/hybrid_astar/vehicle_parameter.h"
+#include "planning/hybrid_search_adapter.h"
 #include "optimizer/footprint_nlp.h"
 #include "optimizer/initial_guess.h"
 
@@ -15,6 +16,8 @@ namespace planning_platform {
 struct PlanningConfiguration {
   VehicleParameter vehicle;
   ParkingPlannerConfig planner;
+  planning::HybridSearchDirection hybrid_search_direction =
+      planning::HybridSearchDirection::kGoalToStart;
   optimizer::InitialGuessConfig initial_guess;
   optimizer::FootprintNlpConfig nlp;
   std::string results_root = "results";

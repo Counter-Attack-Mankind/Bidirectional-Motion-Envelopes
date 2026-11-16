@@ -96,6 +96,9 @@ bool ExperimentLogger::WriteEffectiveParameters(
     if (error) *error = "Cannot write effective parameters";
     return false;
   }
+  const ParkingPlannerConfig effective_search =
+      planning::AdaptHybridSearchConfig(c.planner,
+                                        c.hybrid_search_direction);
   out << std::setprecision(17)
       << "vehicle:\n"
       << "  wheel_base: " << c.vehicle.wheel_base << '\n'
@@ -107,6 +110,9 @@ bool ExperimentLogger::WriteEffectiveParameters(
       << "  max_phi: " << c.vehicle.delta_max << '\n'
       << "  max_omega: " << c.vehicle.omega_max << '\n'
       << "planner:\n"
+      << "  hybrid_search_direction: "
+      << planning::HybridSearchDirectionName(c.hybrid_search_direction)
+      << '\n'
       << "  xy_grid_resolution: " << c.planner.xy_grid_resolution << '\n'
       << "  phi_grid_resolution: " << c.planner.phi_grid_resolution << '\n'
       << "  next_node_num: " << c.planner.next_node_num << '\n'
@@ -122,6 +128,17 @@ bool ExperimentLogger::WriteEffectiveParameters(
       << "  explore_node_num: " << c.planner.explore_node_num << '\n'
       << "  hybrid_astar_timeout: " << c.planner.hybrid_astar_timeout << '\n'
       << "  search_clearance: " << c.planner.search_clearance << '\n'
+      << "  effective_search_costs:\n"
+      << "    traj_forward_penalty: "
+      << effective_search.traj_forward_penalty << '\n'
+      << "    traj_back_penalty: "
+      << effective_search.traj_back_penalty << '\n'
+      << "    traj_gear_switch_penalty: "
+      << effective_search.traj_gear_switch_penalty << '\n'
+      << "    traj_steer_penalty: "
+      << effective_search.traj_steer_penalty << '\n'
+      << "    traj_steer_change_penalty: "
+      << effective_search.traj_steer_change_penalty << '\n'
       << "initial_guess:\n"
       << "  min_dt: " << c.initial_guess.min_dt << '\n'
       << "  max_dt: " << c.initial_guess.max_dt << '\n'
@@ -185,6 +202,19 @@ bool ExperimentLogger::WriteSummary(
       << "scene_valid=" << result.scene_valid << '\n'
       << "hybrid_astar_succeeded=" << result.hybrid_succeeded << '\n'
       << "hybrid_astar_timed_out=" << result.hybrid_timed_out << '\n'
+      << "hybrid_search_direction="
+      << planning::HybridSearchDirectionName(result.hybrid_search_direction)
+      << '\n'
+      << "hybrid_effective_forward_penalty="
+      << result.hybrid_effective_config.traj_forward_penalty << '\n'
+      << "hybrid_effective_back_penalty="
+      << result.hybrid_effective_config.traj_back_penalty << '\n'
+      << "hybrid_effective_gear_switch_penalty="
+      << result.hybrid_effective_config.traj_gear_switch_penalty << '\n'
+      << "hybrid_effective_steer_penalty="
+      << result.hybrid_effective_config.traj_steer_penalty << '\n'
+      << "hybrid_effective_steer_change_penalty="
+      << result.hybrid_effective_config.traj_steer_change_penalty << '\n'
       << "hybrid_astar_time_s=" << result.hybrid_elapsed << '\n'
       << "hybrid_astar_heuristic_time_s="
       << result.hybrid_statistics.heuristic_elapsed_seconds << '\n'
@@ -196,6 +226,10 @@ bool ExperimentLogger::WriteSummary(
       << result.hybrid_statistics.minimum_path_clearance << '\n'
       << "hybrid_astar_points=" << result.hybrid_path.x.size() << '\n'
       << "hybrid_astar_path_length_m=" << path_length << '\n'
+      << "hybrid_astar_gear_switches="
+      << result.hybrid_gear_switch_count << '\n'
+      << "hybrid_astar_steering_recomputed="
+      << result.hybrid_steering_recomputed << '\n'
       << "initial_guess_succeeded=" << result.initial_guess_succeeded << '\n'
       << "initial_guess_time_s=" << result.initial_guess_elapsed << '\n'
       << "initial_guess_nodes=" << result.initial_guess.nodes.size() << '\n'

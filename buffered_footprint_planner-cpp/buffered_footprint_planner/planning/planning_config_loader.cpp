@@ -36,6 +36,16 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   if (!LoadVehicleParameter(node, &vehicle, error)) return false;
 
   auto& planner = configuration->planner;
+  std::string search_direction = "goal_to_start";
+  node.param("hybrid_search_direction", search_direction, search_direction);
+  if (!planning::ParseHybridSearchDirection(
+          search_direction, &configuration->hybrid_search_direction)) {
+    if (error) {
+      *error = "hybrid_search_direction must be start_to_goal or "
+               "goal_to_start";
+    }
+    return false;
+  }
   node.param("xy_grid_resolution", planner.xy_grid_resolution, 0.02);
   node.param("phi_grid_resolution", planner.phi_grid_resolution, 0.05);
   node.param("step_size", planner.step_size, 0.03);

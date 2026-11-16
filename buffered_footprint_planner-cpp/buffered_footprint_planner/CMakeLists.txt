@@ -32,7 +32,7 @@ generate_messages()
 
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES common_math common_util hybrid_astar visualization_plot
+  LIBRARIES common_math common_util hybrid_astar hybrid_search_adapter visualization_plot
             scene_visualizer trajectory_player footprint_visualizer
             swept_area_visualizer body_history_visualizer
             trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
@@ -73,6 +73,9 @@ add_library(hybrid_astar
   planning/hybrid_astar/reeds_shepp_path.cc
 )
 target_link_libraries(hybrid_astar common_math common_util)
+
+add_library(hybrid_search_adapter planning/hybrid_search_adapter.cpp)
+target_link_libraries(hybrid_search_adapter hybrid_astar common_math)
 
 add_library(scene_core
   scene/scenario_manager.cpp
@@ -128,13 +131,16 @@ target_link_libraries(footprint_optimizer common_math hybrid_astar
                       ${CASADI_LIBRARIES} ${catkin_LIBRARIES})
 
 add_library(experiment_logging planning/experiment_logger.cpp)
-target_link_libraries(experiment_logging scene_core footprint_optimizer)
+target_link_libraries(experiment_logging scene_core footprint_optimizer
+                      hybrid_search_adapter)
 
 add_library(planning_config planning/planning_config_loader.cpp)
-target_link_libraries(planning_config footprint_optimizer ${catkin_LIBRARIES})
+target_link_libraries(planning_config hybrid_search_adapter footprint_optimizer
+                      ${catkin_LIBRARIES})
 
 add_library(planning_pipeline planning/planning_pipeline.cpp)
-target_link_libraries(planning_pipeline planning_config hybrid_astar footprint_optimizer
+target_link_libraries(planning_pipeline planning_config hybrid_search_adapter
+                      hybrid_astar footprint_optimizer
                       experiment_logging scene_core ${catkin_LIBRARIES})
 
 add_library(experiment_runner planning/experiment_runner.cpp)
@@ -239,7 +245,7 @@ if(CATKIN_ENABLE_TESTING)
            COMMAND visualization_resampling_regression)
 endif()
 
-install(TARGETS common_math common_util hybrid_astar visualization_plot
+install(TARGETS common_math common_util hybrid_astar hybrid_search_adapter visualization_plot
                 scene_visualizer trajectory_player footprint_visualizer
                 swept_area_visualizer body_history_visualizer
                 trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
