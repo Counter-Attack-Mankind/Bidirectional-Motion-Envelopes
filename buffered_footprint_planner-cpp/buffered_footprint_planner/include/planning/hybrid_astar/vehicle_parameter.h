@@ -13,6 +13,7 @@ struct VehicleParameter {
   double rear_hang = 0.032;
   double width = 0.191;
   double v_max = 0.25;
+  double v_reverse_max = 0.20;
   double a_max = 0.1;
   double delta_max = 0.3491;
   double omega_max = 0.30;

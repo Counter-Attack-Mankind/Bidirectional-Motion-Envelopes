@@ -13,6 +13,7 @@ bool LoadVehicleParameter(const ros::NodeHandle& node,
       !node.getParam("rear_hang", vehicle->rear_hang) ||
       !node.getParam("width", vehicle->width) ||
       !node.getParam("max_velocity", vehicle->v_max) ||
+      !node.getParam("max_reverse_velocity", vehicle->v_reverse_max) ||
       !node.getParam("max_acceleration", vehicle->a_max) ||
       !node.getParam("max_phi", vehicle->delta_max) ||
       !node.getParam("max_omega", vehicle->omega_max)) {
@@ -71,8 +72,8 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   node.param("min_dt", initial.min_dt, 0.0001);
   node.param("max_dt", initial.max_dt, 0.0500);
   node.param("temporal_tightening_eta", initial.eta, 0.90);
-  node.param("max_velocity", initial.forward_speed, 0.20);
-  node.param("max_reverse_velocity", initial.reverse_speed, 0.16);
+  initial.forward_speed = vehicle.v_max;
+  initial.reverse_speed = vehicle.v_reverse_max;
   initial.max_acceleration = vehicle.a_max;
   initial.max_steering_rate = vehicle.omega_max;
   node.param("initial_guess_dmin", initial.dmin, 0.015);
@@ -111,6 +112,9 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
       planner.hybrid_astar_timeout <= 0.0 ||
       !std::isfinite(planner.search_clearance) ||
       planner.search_clearance <= 0.0 ||
+      !std::isfinite(vehicle.v_max) || vehicle.v_max <= 0.0 ||
+      !std::isfinite(vehicle.v_reverse_max) ||
+      vehicle.v_reverse_max <= 0.0 ||
       planner.delta_t <= 0.0 || initial.forward_speed <= 0.0 ||
       initial.reverse_speed <= 0.0 || !std::isfinite(initial.min_dt) ||
       !std::isfinite(initial.max_dt) || initial.min_dt <= 0.0 ||

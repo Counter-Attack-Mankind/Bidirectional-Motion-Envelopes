@@ -106,6 +106,7 @@ bool ExperimentLogger::WriteEffectiveParameters(
       << "  rear_hang: " << c.vehicle.rear_hang << '\n'
       << "  width: " << c.vehicle.width << '\n'
       << "  v_max: " << c.vehicle.v_max << '\n'
+      << "  v_reverse_max: " << c.vehicle.v_reverse_max << '\n'
       << "  a_max: " << c.vehicle.a_max << '\n'
       << "  max_phi: " << c.vehicle.delta_max << '\n'
       << "  max_omega: " << c.vehicle.omega_max << '\n'

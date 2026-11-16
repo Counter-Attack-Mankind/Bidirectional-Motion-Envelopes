@@ -230,7 +230,9 @@ bool CalculateTimeStamp(const std::vector<PathPoint>& path,
                         DenseProfile* profile, std::string* error) {
   const double length = PathLength(path, start, end);
   std::vector<double> s, v, a;
-  if (!SolveMinimumTimeProfile(length, vehicle.v_max, vehicle.a_max,
+  const double direction_velocity_limit =
+      direction >= 0 ? vehicle.v_max : vehicle.v_reverse_max;
+  if (!SolveMinimumTimeProfile(length, direction_velocity_limit, vehicle.a_max,
                                &profile->time, &s, &v, &a,
                                &profile->duration, error)) {
     return false;
@@ -344,7 +346,13 @@ bool StructuralIntervalBound(const std::vector<TrajectoryNode>& dense,
       dense.back().theta - dense.front().theta, 2.0 * M_PI));
   const double kappa_max = std::tan(vehicle.delta_max) / vehicle.wheel_base;
   const double required = std::max(distance, heading / kappa_max);
-  if (required > vehicle.v_max * config.total_time_limit + 1e-12) {
+  const bool contains_reverse = std::any_of(
+      dense.begin(), dense.end(),
+      [](const TrajectoryNode& node) { return node.v < -1e-9; });
+  const double capacity_velocity_limit = contains_reverse
+      ? std::min(vehicle.v_max, vehicle.v_reverse_max)
+      : vehicle.v_max;
+  if (required > capacity_velocity_limit * config.total_time_limit + 1e-12) {
     if (error) {
       *error = "Endpoint displacement exceeds the speed and total-time bounds";
     }
@@ -359,13 +367,14 @@ bool StructuralIntervalBound(const std::vector<TrajectoryNode>& dense,
       const std::size_t acceleration_steps = i > 0 ? i - 1 : 0;
       const std::size_t braking_steps = count - i;
       const double speed = std::min(
-          vehicle.v_max, config.max_acceleration * config.max_dt *
-                             static_cast<double>(
-                                 std::min(acceleration_steps, braking_steps)));
+          capacity_velocity_limit,
+          config.max_acceleration * config.max_dt *
+              static_cast<double>(
+                  std::min(acceleration_steps, braking_steps)));
       speed_sum += speed;
     }
     const double capacity = std::min(config.max_dt * speed_sum,
-                                     vehicle.v_max * config.total_time_limit);
+        capacity_velocity_limit * config.total_time_limit);
     if (capacity + 1e-12 >= required) {
       *interval_bound = count;
       return true;
@@ -624,7 +633,8 @@ void FinalizeInitialValues(const VehicleParameter& vehicle,
         diagnostics->max_abs_clipped_steering_rate, std::abs(node.w));
     diagnostics->max_velocity_bound_violation = std::max(
         diagnostics->max_velocity_bound_violation,
-        std::max(0.0, std::abs(node.v) - vehicle.v_max));
+        std::max({0.0, node.v - vehicle.v_max,
+                  -node.v - vehicle.v_reverse_max}));
     diagnostics->max_acceleration_bound_violation = std::max(
         diagnostics->max_acceleration_bound_violation,
         std::max(0.0, std::abs(node.a) - vehicle.a_max));

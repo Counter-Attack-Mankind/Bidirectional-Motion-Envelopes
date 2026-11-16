@@ -316,7 +316,7 @@ OptimizationResult SolveFootprintNlp(
 
   for (std::size_t i = 0; i < node_count; ++i) {
     opti.subject_to(state(3, i) <= vehicle.v_max);
-    opti.subject_to(state(3, i) >= -vehicle.v_max);
+    opti.subject_to(state(3, i) >= -vehicle.v_reverse_max);
     opti.subject_to(state(4, i) <= vehicle.a_max);
     opti.subject_to(state(4, i) >= -vehicle.a_max);
     opti.subject_to(state(5, i) <= vehicle.delta_max);
@@ -662,7 +662,9 @@ OptimizationResult SolveFootprintNlp(
     for (std::size_t i = 0; i < node_count; ++i) {
       const auto& node = snapshot.trajectory.nodes[i];
       const std::string location = "node=" + std::to_string(i);
-      RecordMaximum(PositiveViolation(std::abs(node.v) - vehicle.v_max),
+      RecordMaximum(std::max(PositiveViolation(node.v - vehicle.v_max),
+                             PositiveViolation(-node.v -
+                                               vehicle.v_reverse_max)),
                     location, &diagnostics.velocity_bound_mps);
       RecordMaximum(PositiveViolation(std::abs(node.a) - vehicle.a_max),
                     location, &diagnostics.acceleration_bound_mps2);
