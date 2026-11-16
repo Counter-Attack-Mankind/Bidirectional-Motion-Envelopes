@@ -13,6 +13,7 @@ namespace {
 constexpr double kEndpointPositionTolerance = 1e-6;
 constexpr double kEndpointHeadingTolerance = 1e-6;
 constexpr double kSteeringConsistencyTolerance = 1e-6;
+constexpr double kSteeringBoundTolerance = 1e-4;
 
 bool Finite(double value) { return std::isfinite(value); }
 
