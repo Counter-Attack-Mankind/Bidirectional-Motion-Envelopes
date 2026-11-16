@@ -118,10 +118,30 @@ void SceneVisualizer::ClearPlanningStage() const {
 
 void SceneVisualizer::QueueHybridPath(
     const planning::HybridAStartResult& path) const {
-  if (path.x.empty() || path.x.size() != path.y.size()) return;
+  VisualizationPlot::ClearMarkers("hybrid_astar_path", 0, 1023);
+  if (path.x.size() < 2 || path.x.size() != path.y.size() ||
+      path.gear.size() != path.x.size()) return;
   ClearHybridSearch();
-  VisualizationPlot::Plot(path.x, path.y, 0.025, palette::HybridPath(), 0,
-                          "hybrid_astar_path");
+  std::vector<double> x{path.x.front()};
+  std::vector<double> y{path.y.front()};
+  bool forward = path.gear.front();
+  int marker_id = 0;
+  for (std::size_t i = 0; i + 1 < path.x.size(); ++i) {
+    x.push_back(path.x[i + 1]);
+    y.push_back(path.y[i + 1]);
+    const bool end = i + 2 == path.x.size() ||
+                     path.gear[i + 1] != forward;
+    if (!end) continue;
+    VisualizationPlot::Plot(
+        x, y, palette::kHybridPathLineWidth,
+        forward ? palette::HybridForward() : palette::HybridReverse(),
+        marker_id++, "hybrid_astar_path");
+    if (i + 2 < path.x.size()) {
+      x = {path.x[i + 1]};
+      y = {path.y[i + 1]};
+      forward = path.gear[i + 1];
+    }
+  }
 }
 
 void SceneVisualizer::QueueHybridSearch(
@@ -226,7 +246,7 @@ void SceneVisualizer::QueuePlaybackVehicle(const PlaybackState& state) const {
 }
 
 void SceneVisualizer::ClearPlanningResults() const {
-  VisualizationPlot::ClearMarkers("hybrid_astar_path", 0, 0);
+  VisualizationPlot::ClearMarkers("hybrid_astar_path", 0, 1023);
   ClearHybridSearch();
   ClearTrajectoryPlayback();
 }

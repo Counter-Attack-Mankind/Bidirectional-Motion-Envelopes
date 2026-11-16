@@ -8,6 +8,7 @@
 #include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <interactive_markers/interactive_marker_server.h>
+#include <interactive_markers/menu_handler.h>
 #include <ros/ros.h>
 #include <std_msgs/Bool.h>
 #include <std_msgs/UInt64.h>
@@ -56,6 +57,14 @@ class SimulationNode {
     interactive_server_ =
         std::make_unique<interactive_markers::InteractiveMarkerServer>(
             "/simulation/scene_editor", "", false);
+    menu_handler_.insert(
+        "Finish Editing",
+        [this](const visualization_msgs::InteractiveMarkerFeedbackConstPtr&
+                   feedback) { HandleFinishEditingMenu(feedback); });
+    menu_handler_.insert(
+        "Begin Editing",
+        [this](const visualization_msgs::InteractiveMarkerFeedbackConstPtr&
+                   feedback) { HandleBeginEditingMenu(feedback); });
     BuildInteractiveMarkers();
     obstacle_poses_publisher_ = private_node_.advertise<geometry_msgs::PoseArray>(
         "/simulation/scene_obstacle_poses", 1, true);
@@ -125,9 +134,11 @@ class SimulationNode {
   }
 
   void BeginEditing() {
+    if (planning_active_) return;
     if (editing_active_) return;
     editing_active_ = true;
     start_locked_ = false;
+    SetInteractionEnabled();
     ClearTaskMarkers();
     visualizer_.QueuePlanningStage(scenario_.bounds(), "Scene editing");
     visualizer_.Trigger();
@@ -139,6 +150,7 @@ class SimulationNode {
     if (planning_active_) return;
     editing_active_ = false;
     start_locked_ = false;
+    SetInteractionEnabled();
     stable_pose_ = vehicle_pose_;
     stable_since_ = ros::Time::now();
     last_countdown_seconds_ = -1;
@@ -156,13 +168,13 @@ class SimulationNode {
                             request.object_id, response);
       }
       planning_active_ = true;
-      SetInteractionEnabled(false);
+      SetInteractionEnabled();
       return FillResponse(true, "Planning scene locked", request.object_id,
                           response);
     }
     if (request.action == request.END_PLANNING) {
       planning_active_ = false;
-      SetInteractionEnabled(true);
+      SetInteractionEnabled();
       return FillResponse(true, "Planning scene released", request.object_id,
                           response);
     }
@@ -343,7 +355,7 @@ class SimulationNode {
     move.orientation.y = 0.7071067812;
     move.interaction_mode = interactive
         ? visualization_msgs::InteractiveMarkerControl::MOVE_PLANE
-        : visualization_msgs::InteractiveMarkerControl::NONE;
+        : visualization_msgs::InteractiveMarkerControl::MENU;
     if (is_vehicle) {
       const double rear = -vehicle_.rear_hang;
       const double front = vehicle_.wheel_base + vehicle_.front_hang;
@@ -405,6 +417,7 @@ class SimulationNode {
                                 false, interactive, i + 1),
           [this](const visualization_msgs::InteractiveMarkerFeedbackConstPtr&
                      feedback) { HandleInteractiveFeedback(feedback); });
+      menu_handler_.apply(*interactive_server_, obstacle.id);
     }
     const double vehicle_length =
         vehicle_.rear_hang + vehicle_.wheel_base + vehicle_.front_hang;
@@ -413,12 +426,35 @@ class SimulationNode {
                               true, interactive),
         [this](const visualization_msgs::InteractiveMarkerFeedbackConstPtr&
                    feedback) { HandleInteractiveFeedback(feedback); });
+    menu_handler_.apply(*interactive_server_, vehicle_id_);
     interactive_server_->applyChanges();
   }
 
-  void SetInteractionEnabled(bool enabled) {
+  void SetInteractionEnabled() {
+    const bool enabled = editing_active_ && !planning_active_;
     if (enabled == interaction_enabled_) return;
     BuildInteractiveMarkers(enabled);
+  }
+
+  void HandleFinishEditingMenu(
+      const visualization_msgs::InteractiveMarkerFeedbackConstPtr&) {
+    if (planning_active_) {
+      ROS_WARN("Cannot finish editing while planning is active");
+      return;
+    }
+    if (!editing_active_) return;
+    BeginStationaryDetection();
+    ROS_INFO("Editing finished from RViz menu; checking Vehicle 1 stability "
+             "for %.1f s", stationary_duration_);
+  }
+
+  void HandleBeginEditingMenu(
+      const visualization_msgs::InteractiveMarkerFeedbackConstPtr&) {
+    if (planning_active_) {
+      ROS_WARN("Cannot begin editing while planning is active");
+      return;
+    }
+    BeginEditing();
   }
 
   void SyncInteractiveMarker(const std::string& object_id) {
@@ -462,10 +498,6 @@ class SimulationNode {
                feedback->marker_name.c_str(), message.c_str());
       return;
     }
-    // A complete mouse gesture is also a complete edit.  This lets a user
-    // start the existing stationary detector without switching to the
-    // keyboard; another MOUSE_DOWN cleanly returns to editing.
-    BeginStationaryDetection();
   }
 
   void QueueCountdown() {
@@ -568,6 +600,7 @@ class SimulationNode {
   ros::Timer stationary_timer_;
   std::unique_ptr<interactive_markers::InteractiveMarkerServer>
       interactive_server_;
+  interactive_markers::MenuHandler menu_handler_;
 };
 
 }  // namespace
