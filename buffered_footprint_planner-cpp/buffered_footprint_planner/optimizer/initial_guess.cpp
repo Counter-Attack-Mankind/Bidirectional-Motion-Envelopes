@@ -663,6 +663,7 @@ bool BuildInitialGuess(const planning::HybridAStartResult& hybrid_path,
   *diagnostics = InitialGuessDiagnostics{};
   if (trace) *trace = InitialGuessTrace{};
   diagnostics->hybrid_point_count = hybrid_path.x.size();
+  diagnostics->required_bme_obstacle_clearance = config.dmin;
   if (!trajectory || hybrid_path.x.size() < 2 ||
       hybrid_path.x.size() != hybrid_path.y.size() ||
       hybrid_path.x.size() != hybrid_path.phi.size() ||
@@ -849,6 +850,8 @@ bool SaveInitialGuessDiagnostics(const std::string& output_file,
          << d.environment_fallback_interval_count << '\n'
          << "max_environment_fallback_violation="
          << d.max_environment_fallback_violation << '\n'
+         << "required_bme_obstacle_clearance_m="
+         << d.required_bme_obstacle_clearance << '\n'
          << "minimum_bme_obstacle_clearance_m="
          << d.minimum_bme_obstacle_clearance << '\n'
          << "max_bme_map_boundary_violation_m="

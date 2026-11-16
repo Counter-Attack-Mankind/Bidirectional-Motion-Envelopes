@@ -20,7 +20,7 @@ struct InitialGuessConfig {
   double reverse_speed = 0.16;
   double max_acceleration = 0.10;
   double max_steering_rate = 0.30;
-  double dmin = 0.005;
+  double dmin = 0.015;
   double total_time_limit = 35.0;
 };
 
@@ -77,6 +77,7 @@ struct InitialGuessDiagnostics {
   double max_environment_fallback_violation = 0.0;
   double reference_step_cap = 0.0;
   double maximum_available_trajectory_time = 0.0;
+  double required_bme_obstacle_clearance = 0.0;
   double minimum_bme_obstacle_clearance =
       std::numeric_limits<double>::infinity();
   double max_bme_map_boundary_violation = 0.0;

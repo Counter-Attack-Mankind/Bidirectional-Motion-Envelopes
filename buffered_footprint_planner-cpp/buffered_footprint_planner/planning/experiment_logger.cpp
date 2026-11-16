@@ -130,12 +130,24 @@ bool ExperimentLogger::WriteEffectiveParameters(
       << "  reverse_speed: " << c.initial_guess.reverse_speed << '\n'
       << "  max_acceleration: " << c.initial_guess.max_acceleration << '\n'
       << "  max_steering_rate: " << c.initial_guess.max_steering_rate << '\n'
+      << "  dmin: " << c.initial_guess.dmin << '\n'
       << "optimizer:\n"
       << "  min_dt: " << c.nlp.min_dt << '\n'
       << "  max_dt: " << c.nlp.max_dt << '\n'
       << "  dmin: " << c.nlp.dmin << '\n'
       << "  total_time_limit: " << c.nlp.total_time_limit << '\n'
       << "  tol: " << c.nlp.tolerance << '\n'
+      << "  acceptable_tol: " << c.nlp.acceptable_tolerance << '\n'
+      << "  acceptable_iter: " << c.nlp.acceptable_iterations << '\n'
+      << "  constr_viol_tol: " << c.nlp.constraint_violation_tolerance << '\n'
+      << "  acceptable_constr_viol_tol: "
+      << c.nlp.acceptable_constraint_violation_tolerance << '\n'
+      << "  acceptable_dual_inf_tol: "
+      << c.nlp.acceptable_dual_infeasibility_tolerance << '\n'
+      << "  acceptable_compl_inf_tol: "
+      << c.nlp.acceptable_complementarity_tolerance << '\n'
+      << "  constraint_validation_tolerance: "
+      << c.nlp.constraint_validation_tolerance << '\n'
       << "  max_iter: " << c.nlp.max_iterations << '\n'
       << "  max_cpu_time: " << c.nlp.max_cpu_time << '\n'
       << "  linear_solver: " << c.nlp.linear_solver << '\n'
@@ -208,6 +220,8 @@ bool ExperimentLogger::WriteSummary(
       << initial.environment_fallback_interval_count << '\n'
       << "initial_guess_max_environment_fallback_violation="
       << initial.max_environment_fallback_violation << '\n'
+      << "initial_guess_required_bme_obstacle_clearance_m="
+      << initial.required_bme_obstacle_clearance << '\n'
       << "initial_guess_minimum_bme_obstacle_clearance_m="
       << initial.minimum_bme_obstacle_clearance << '\n'
       << "initial_guess_max_bme_map_boundary_violation_m="

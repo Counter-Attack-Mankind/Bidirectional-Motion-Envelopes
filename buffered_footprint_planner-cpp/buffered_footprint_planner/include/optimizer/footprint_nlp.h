@@ -14,8 +14,15 @@ struct FootprintNlpConfig {
   double min_dt = 0.0001;
   double max_dt = 0.0500;
   double total_time_limit = 35.0;
-  double dmin = 0.005;
+  double dmin = 0.010;
   double tolerance = 1e-3;
+  double acceptable_tolerance = 1e-2;
+  int acceptable_iterations = 3;
+  double constraint_violation_tolerance = 1e-6;
+  double acceptable_constraint_violation_tolerance = 1e-6;
+  double acceptable_dual_infeasibility_tolerance = 1e-2;
+  double acceptable_complementarity_tolerance = 1e-6;
+  double constraint_validation_tolerance = 1e-6;
   int max_iterations = 399984;
   double max_cpu_time = 20.0;
   std::string linear_solver = "ma27";
@@ -41,6 +48,7 @@ bool WriteCollisionValidation(
     const std::string& output_file, const Trajectory& trajectory,
     const VehicleParameter& vehicle,
     const std::vector<common::math::Polygon2d>& obstacles,
-    const std::array<double, 4>& bounds, double dmin, std::string* error);
+    const std::array<double, 4>& bounds, double dmin, bool* passed,
+    std::string* error);
 
 }  // namespace optimizer

@@ -157,14 +157,26 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
       ? "NLP post-solve validation failed after " + result.optimization.status
       : result.optimization.status;
   if (result.success) {
-    optimizer::SaveSuccessfulOptimizationResults(
-        result.result_directory, result.optimization, &error);
-    optimizer::WriteCollisionValidation(
+    bool collision_validation_passed = false;
+    const bool collision_report_written = optimizer::WriteCollisionValidation(
         (std::filesystem::path(result.result_directory) /
          "collision_validation.txt").string(),
         result.optimization.trajectory, configuration_.vehicle,
         snapshot.obstacle_polygons(), snapshot.bounds,
-        configuration_.nlp.dmin, &error);
+        configuration_.nlp.dmin, &collision_validation_passed, &error);
+    if (!collision_report_written || !collision_validation_passed) {
+      result.success = false;
+      result.optimization.success = false;
+      result.status = "Independent collision validation failed after " +
+                      result.optimization.status;
+      if (!collision_report_written) {
+        result.optimization.diagnostic_error = error;
+      }
+    }
+  }
+  if (result.success) {
+    optimizer::SaveSuccessfulOptimizationResults(
+        result.result_directory, result.optimization, &error);
     if (!configuration_.nlp.save_debug_data) {
       std::filesystem::remove_all(debug_directory, filesystem_error);
     }

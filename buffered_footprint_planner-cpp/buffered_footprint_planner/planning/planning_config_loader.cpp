@@ -48,7 +48,7 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   node.param("analytic_expansion_cost", planner.analytic_expansion_cost, 20.0);
   node.param("dubins_phi_gamma", planner.dubins_phi_gamma, 1.1);
   node.param("hybrid_astar_timeout", planner.hybrid_astar_timeout, 8.0);
-  node.param("search_clearance", planner.search_clearance, 0.012);
+  node.param("search_clearance", planner.search_clearance, 0.020);
   int next_node_num = 20;
   int explore_node_num = 2000000;
   node.param("next_node_num", next_node_num, next_node_num);
@@ -65,17 +65,29 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   node.param("max_reverse_velocity", initial.reverse_speed, 0.16);
   initial.max_acceleration = vehicle.a_max;
   initial.max_steering_rate = vehicle.omega_max;
+  node.param("initial_guess_dmin", initial.dmin, 0.015);
 
   auto& nlp = configuration->nlp;
   nlp.min_dt = initial.min_dt;
   nlp.max_dt = initial.max_dt;
-  node.param("dmin", nlp.dmin, 0.005);
+  node.param("dmin", nlp.dmin, 0.010);
   node.param("total_time_limit", nlp.total_time_limit, 35.0);
-  initial.dmin = nlp.dmin;
   initial.total_time_limit = nlp.total_time_limit;
   node.param("ipopt_max_iterations", nlp.max_iterations, 399984);
   node.param("ipopt_max_cpu_time", nlp.max_cpu_time, 20.0);
   node.param("ipopt_tolerance", nlp.tolerance, 1e-3);
+  node.param("ipopt_acceptable_tol", nlp.acceptable_tolerance, 1e-2);
+  node.param("ipopt_acceptable_iter", nlp.acceptable_iterations, 3);
+  node.param("ipopt_constr_viol_tol", nlp.constraint_violation_tolerance,
+             1e-6);
+  node.param("ipopt_acceptable_constr_viol_tol",
+             nlp.acceptable_constraint_violation_tolerance, 1e-6);
+  node.param("ipopt_acceptable_dual_inf_tol",
+             nlp.acceptable_dual_infeasibility_tolerance, 1e-2);
+  node.param("ipopt_acceptable_compl_inf_tol",
+             nlp.acceptable_complementarity_tolerance, 1e-6);
+  node.param("constraint_validation_tolerance",
+             nlp.constraint_validation_tolerance, 1e-6);
   node.param("ipopt_linear_solver", nlp.linear_solver, std::string("ma27"));
   node.param("save_debug_data", nlp.save_debug_data, false);
   node.param("results_directory", configuration->results_root,
@@ -92,7 +104,21 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
       planner.delta_t <= 0.0 || initial.forward_speed <= 0.0 ||
       initial.reverse_speed <= 0.0 || !std::isfinite(initial.min_dt) ||
       !std::isfinite(initial.max_dt) || initial.min_dt <= 0.0 ||
-      initial.max_dt < initial.min_dt || nlp.dmin <= 0.0 ||
+      initial.max_dt < initial.min_dt || initial.dmin <= 0.0 ||
+      !std::isfinite(initial.dmin) || nlp.dmin <= 0.0 ||
+      !std::isfinite(nlp.tolerance) || nlp.tolerance <= 0.0 ||
+      !std::isfinite(nlp.acceptable_tolerance) ||
+      nlp.acceptable_tolerance <= 0.0 || nlp.acceptable_iterations <= 0 ||
+      !std::isfinite(nlp.constraint_violation_tolerance) ||
+      nlp.constraint_violation_tolerance <= 0.0 ||
+      !std::isfinite(nlp.acceptable_constraint_violation_tolerance) ||
+      nlp.acceptable_constraint_violation_tolerance <= 0.0 ||
+      !std::isfinite(nlp.acceptable_dual_infeasibility_tolerance) ||
+      nlp.acceptable_dual_infeasibility_tolerance <= 0.0 ||
+      !std::isfinite(nlp.acceptable_complementarity_tolerance) ||
+      nlp.acceptable_complementarity_tolerance <= 0.0 ||
+      !std::isfinite(nlp.constraint_validation_tolerance) ||
+      nlp.constraint_validation_tolerance <= 0.0 ||
       !std::isfinite(nlp.total_time_limit) || nlp.total_time_limit <= 0.0 ||
       nlp.max_cpu_time <= 0.0 ||
       !optimizer::CheckVehicleGeometryCondition(vehicle, &geometry_error)) {

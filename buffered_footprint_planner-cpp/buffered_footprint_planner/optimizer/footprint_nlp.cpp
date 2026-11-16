@@ -923,6 +923,16 @@ OptimizationResult SolveFootprintNlp(
   solver_options["max_iter"] = config.max_iterations;
   solver_options["max_cpu_time"] = config.max_cpu_time;
   solver_options["tol"] = config.tolerance;
+  solver_options["acceptable_tol"] = config.acceptable_tolerance;
+  solver_options["acceptable_iter"] = config.acceptable_iterations;
+  solver_options["constr_viol_tol"] =
+      config.constraint_violation_tolerance;
+  solver_options["acceptable_constr_viol_tol"] =
+      config.acceptable_constraint_violation_tolerance;
+  solver_options["acceptable_dual_inf_tol"] =
+      config.acceptable_dual_infeasibility_tolerance;
+  solver_options["acceptable_compl_inf_tol"] =
+      config.acceptable_complementarity_tolerance;
   solver_options["linear_solver"] = config.linear_solver;
   solver_options["mu_strategy"] = "adaptive";
   solver_options["print_level"] = 5;
@@ -963,15 +973,15 @@ OptimizationResult SolveFootprintNlp(
     result.solve_time = std::chrono::duration<double>(
         std::chrono::steady_clock::now() - solve_begin).count();
     read_stats(solution.stats());
-    result.solver_succeeded =
-        result.status.find("Solve_Succeeded") != std::string::npos ||
-        result.status.find("Solved_To_Acceptable_Level") != std::string::npos;
+    result.solver_succeeded = result.status == "Solve_Succeeded" ||
+                              result.status ==
+                                  "Solved_To_Acceptable_Level";
     result.objective = static_cast<double>(solution.value(objective));
     NlpIterateSnapshot solution_snapshot;
     extract_snapshot(solution, &solution_snapshot);
     evaluate_snapshot(solution_snapshot);
     result.trajectory = solution_snapshot.trajectory;
-    const double residual_limit = std::max(1e-4, 10.0 * config.tolerance);
+    const double residual_limit = config.constraint_validation_tolerance;
     result.success = result.solver_succeeded &&
                      result.max_dynamics_residual <= residual_limit &&
                      result.max_variable_bound_violation <= residual_limit &&
@@ -1210,7 +1220,9 @@ bool WriteCollisionValidation(
     const std::string& output_file, const Trajectory& trajectory,
     const VehicleParameter& vehicle,
     const std::vector<common::math::Polygon2d>& obstacles,
-    const std::array<double, 4>& bounds, double dmin, std::string* error) {
+    const std::array<double, 4>& bounds, double dmin, bool* passed,
+    std::string* error) {
+  if (passed) *passed = false;
   std::ofstream stream(output_file);
   if (!stream) {
     if (error) *error = "Cannot create collision validation report";
@@ -1288,6 +1300,11 @@ bool WriteCollisionValidation(
   if (!std::isfinite(minimum_obstacle_distance)) {
     minimum_obstacle_distance = 0.0;
   }
+  const bool validation_passed =
+      frames > 0 && collision_frames == 0 &&
+      safety_distance_violation_frames == 0 &&
+      boundary_violation_frames == 0 &&
+      bme_containment_violation_frames == 0;
   stream << std::setprecision(12) << std::boolalpha
          << "sampling_frequency_hz=100\n"
          << "sampling_period_s=" << evaluation_dt << '\n'
@@ -1308,12 +1325,11 @@ bool WriteCollisionValidation(
          << "bme_containment_tolerance_m=" << containment_tolerance << '\n'
          << "maximum_bme_containment_violation_m="
          << maximum_bme_containment_violation << '\n'
-         << "passed=" << (frames > 0 && collision_frames == 0 &&
-                           safety_distance_violation_frames == 0 &&
-                           boundary_violation_frames == 0 &&
-                           bme_containment_violation_frames == 0) << '\n'
+         << "passed=" << validation_passed << '\n'
          << "continuous_time_safety_proof=false\n";
-  return static_cast<bool>(stream);
+  const bool written = static_cast<bool>(stream);
+  if (passed) *passed = written && validation_passed;
+  return written;
 }
 
 }  // namespace optimizer

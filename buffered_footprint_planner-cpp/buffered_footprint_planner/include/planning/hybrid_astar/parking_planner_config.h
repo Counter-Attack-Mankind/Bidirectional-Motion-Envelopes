@@ -22,7 +22,7 @@ struct ParkingPlannerConfig {
   double dubins_phi_gamma = 1.1;
   size_t explore_node_num = 2000000;
   double hybrid_astar_timeout = 8.0;
-  double search_clearance = 0.012;
+  double search_clearance = 0.020;
 
   std::array<double, 4> xy_bounds{};
 };
