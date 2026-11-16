@@ -30,8 +30,14 @@ int main() {
   config.stationary_duration = 3.0;
 
   execution::ExperimentManager planning_manager(config);
+  planning_manager.InitializeTaskSequence(12);
   auto scene = MakeScene();
-  AdvanceToPlanning(&planning_manager, scene);
+  planning_manager.Observe(scene, true, 1, 0.0);
+  planning_manager.Observe(scene, true, 1, 3.1);
+  scene::SceneSnapshot resumed_frozen;
+  std::uint64_t resumed_generation = 0;
+  assert(planning_manager.BeginPlanning(&resumed_frozen, &resumed_generation));
+  assert(resumed_frozen.task_id == 13 && resumed_generation == 13);
   scene.start.x += 0.02;
   planning_manager.Observe(scene, true, 2, 3.2);
   assert(!planning_manager.frozen_scene_valid());

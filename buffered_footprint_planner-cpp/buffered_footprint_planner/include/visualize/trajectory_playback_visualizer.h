@@ -8,6 +8,7 @@
 #include "planning/hybrid_astar/vehicle_parameter.h"
 #include "optimizer/trajectory.h"
 #include "visualize/footprint_visualizer.h"
+#include "visualize/body_history_visualizer.h"
 #include "visualize/scene_visualizer.h"
 #include "visualize/swept_area_visualizer.h"
 #include "visualize/trajectory_player.h"
@@ -21,7 +22,8 @@ class TrajectoryPlaybackVisualizer {
   bool Initialize(ros::NodeHandle& node, SceneVisualizer* scene_visualizer,
                   const VehicleParameter& vehicle, double playback_speed,
                   double playback_frequency_hz,
-                  double swept_area_resolution, std::string* error);
+                  double swept_area_resolution, double body_history_spacing,
+                  std::string* error);
   bool Start(const optimizer::Trajectory& trajectory, std::string* error);
   void StopAndClear();
   bool active() const { return player_.active(); }
@@ -36,6 +38,7 @@ class TrajectoryPlaybackVisualizer {
   optimizer::Trajectory trajectory_;
   TrajectoryPlayer player_;
   FootprintVisualizer footprint_visualizer_;
+  BodyHistoryVisualizer body_history_visualizer_;
   SweptAreaVisualizer swept_area_visualizer_;
   double playback_speed_ = 1.0;
   double playback_frequency_hz_ = 100.0;

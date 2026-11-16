@@ -23,6 +23,11 @@ double YawDistance(double lhs, double rhs) {
 ExperimentManager::ExperimentManager(Configuration configuration)
     : configuration_(configuration) {}
 
+void ExperimentManager::InitializeTaskSequence(std::uint64_t last_task_id) {
+  if (task_id_ == 0 && state_ == State::kWaitingForData)
+    task_id_ = last_task_id;
+}
+
 double ExperimentManager::ObstacleBoundaryDistance(
     const scene::SceneObstacle& lhs, const scene::SceneObstacle& rhs) {
   const auto left_polygon = lhs.polygon();

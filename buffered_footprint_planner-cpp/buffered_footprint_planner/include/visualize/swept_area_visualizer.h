@@ -18,23 +18,28 @@ class SweptAreaVisualizer {
   bool Initialize(const VehicleParameter& vehicle, double resolution,
                   std::string* error,
                   std::string marker_namespace = "trajectory_swept_area");
-  void Update(const optimizer::TrajectoryNode& pose);
+  void Update(const optimizer::TrajectoryNode& pose, bool forward = true);
   void UpdateAlongTrajectory(const optimizer::Trajectory& trajectory,
                              std::size_t previous_interval,
                              std::size_t current_interval,
                              const optimizer::TrajectoryNode& current_pose);
-  void Reset(const optimizer::TrajectoryNode& start_pose);
+  void Reset(const optimizer::TrajectoryNode& start_pose,
+             bool forward = true);
   void Clear();
   void QueueDirtyMarkers();
 
-  std::size_t cell_count() const { return occupied_cells_.size(); }
+  std::size_t cell_count() const {
+    return forward_layer_.occupied_cells.size() +
+           reverse_layer_.occupied_cells.size();
+  }
   std::size_t raster_sample_count() const { return raster_sample_count_; }
 
  private:
   void AddInterpolatedSweep(const optimizer::TrajectoryNode& first,
-                            const optimizer::TrajectoryNode& second);
-  void RasterizeVehicle(const optimizer::TrajectoryNode& pose);
-  void AddCell(std::int32_t x_index, std::int32_t y_index);
+                            const optimizer::TrajectoryNode& second,
+                            bool forward);
+  void RasterizeVehicle(const optimizer::TrajectoryNode& pose, bool forward);
+  void AddCell(std::int32_t x_index, std::int32_t y_index, bool forward);
   static std::uint64_t CellKey(std::int32_t x_index,
                                std::int32_t y_index);
 
@@ -44,10 +49,14 @@ class SweptAreaVisualizer {
   double vehicle_radius_ = 0.0;
   optimizer::TrajectoryNode previous_pose_;
   bool has_previous_pose_ = false;
-  std::unordered_set<std::uint64_t> occupied_cells_;
-  std::vector<std::vector<common::math::Vec2d>> marker_chunks_;
-  std::size_t first_dirty_chunk_ = std::numeric_limits<std::size_t>::max();
-  std::size_t published_chunk_count_ = 0;
+  struct DirectionLayer {
+    std::unordered_set<std::uint64_t> occupied_cells;
+    std::vector<std::vector<common::math::Vec2d>> marker_chunks;
+    std::size_t first_dirty_chunk = std::numeric_limits<std::size_t>::max();
+    std::size_t published_chunk_count = 0;
+  };
+  DirectionLayer forward_layer_;
+  DirectionLayer reverse_layer_;
   std::size_t raster_sample_count_ = 0;
   std::string marker_namespace_ = "trajectory_swept_area";
 };

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "common/util/color.h"
+#include "visualize/visualization_palette.h"
 #include "visualize/visualization_plot.h"
 
 namespace visualization {
@@ -30,9 +31,8 @@ void FootprintVisualizer::Update(
   center_x /= static_cast<double>(interval.corners.size());
   center_y /= static_cast<double>(interval.corners.size());
 
-  Color outline = interval.gear ? Color::Blue : Color::Red;
-  Color fill = outline;
-  fill.set_a(0.28);
+  Color outline = interval.gear ? palette::Forward() : palette::Reverse();
+  Color fill = palette::WithAlpha(outline, palette::kFootprintFillAlpha);
   VisualizationPlot::PlotFilledPolygon(
       x, y, fill, 0, namespace_prefix_ + "_footprint_fill", 0.022);
   VisualizationPlot::PlotPolygon(

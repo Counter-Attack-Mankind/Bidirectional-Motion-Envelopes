@@ -7,6 +7,7 @@
 #include "optimizer/trajectory.h"
 #include "scene/scene_snapshot.h"
 #include "visualize/footprint_visualizer.h"
+#include "visualize/body_history_visualizer.h"
 #include "visualize/swept_area_visualizer.h"
 
 namespace visualization {
@@ -17,7 +18,7 @@ class RealVehicleVisualizer {
  public:
   RealVehicleVisualizer() : footprint_("actual_bme") {}
   bool Initialize(const VehicleParameter& vehicle, double swept_resolution,
-                  std::string* error);
+                  double body_history_spacing, std::string* error);
   void StartTask(const optimizer::Trajectory& reference);
   void Update(const scene::Pose2d& pose);
   void Clear();
@@ -26,6 +27,7 @@ class RealVehicleVisualizer {
   optimizer::Trajectory reference_;
   FootprintVisualizer footprint_;
   SweptAreaVisualizer swept_area_;
+  BodyHistoryVisualizer body_history_;
   std::vector<double> trail_x_;
   std::vector<double> trail_y_;
   bool active_ = false;

@@ -135,6 +135,18 @@ class SimulationNode {
     ROS_INFO("Scene editing resumed; previous planning task invalidated");
   }
 
+  void BeginStationaryDetection() {
+    if (planning_active_) return;
+    editing_active_ = false;
+    start_locked_ = false;
+    stable_pose_ = vehicle_pose_;
+    stable_since_ = ros::Time::now();
+    last_countdown_seconds_ = -1;
+    ClearTaskMarkers();
+    QueueCountdown();
+    PublishSceneState();
+  }
+
   bool HandleCommand(
       buffered_footprint_planner::SetObjectPose::Request& request,
       buffered_footprint_planner::SetObjectPose::Response& response) {
@@ -159,14 +171,7 @@ class SimulationNode {
         return FillResponse(false, "Planning is active", request.object_id,
                             response);
       }
-      editing_active_ = false;
-      start_locked_ = false;
-      stable_pose_ = vehicle_pose_;
-      stable_since_ = ros::Time::now();
-      last_countdown_seconds_ = -1;
-      ClearTaskMarkers();
-      QueueCountdown();
-      PublishSceneState();
+      BeginStationaryDetection();
       ROS_INFO("Editing finished; checking Vehicle 1 stability for %.1f s",
                stationary_duration_);
       return FillResponse(true, "Stationary detection started", vehicle_id_,
@@ -331,31 +336,38 @@ class SimulationNode {
     marker.pose = InteractivePose(object_id);
     marker.scale = std::max(0.28, 1.5 * std::max(length, width));
 
-    visualization_msgs::InteractiveMarkerControl visual;
-    visual.name = "object";
-    visual.always_visible = true;
+    visualization_msgs::InteractiveMarkerControl move;
+    move.name = "move_xy";
+    move.always_visible = true;
+    move.orientation.w = 0.7071067812;
+    move.orientation.y = 0.7071067812;
+    move.interaction_mode = interactive
+        ? visualization_msgs::InteractiveMarkerControl::MOVE_PLANE
+        : visualization_msgs::InteractiveMarkerControl::NONE;
     if (is_vehicle) {
       const double rear = -vehicle_.rear_hang;
       const double front = vehicle_.wheel_base + vehicle_.front_hang;
-      visual.markers.push_back(BoxMarker(front - rear, width,
-                                         0.5 * (front + rear),
-                                         0.25f, 0.78f, 0.25f, 0.22f));
-      visual.markers.push_back(
-          OutlineMarker(rear, front, width, 0.0f, 0.65f, 0.0f));
+      move.markers.push_back(BoxMarker(front - rear, width,
+                                       0.5 * (front + rear),
+                                       0.1569f, 0.4549f, 0.3529f, 0.22f));
+      move.markers.push_back(
+          OutlineMarker(rear, front, width, 0.1569f, 0.4549f, 0.3529f));
       visualization_msgs::Marker heading;
       heading.type = visualization_msgs::Marker::ARROW;
       heading.pose.orientation.w = 1.0;
       heading.scale.x = std::max(0.12, front);
       heading.scale.y = 0.025;
       heading.scale.z = 0.04;
-      heading.color.g = 0.65f;
+      heading.color.r = 0.1569f;
+      heading.color.g = 0.4549f;
+      heading.color.b = 0.3529f;
       heading.color.a = 1.0f;
-      visual.markers.push_back(heading);
+      move.markers.push_back(heading);
     } else {
-      visual.markers.push_back(
-          BoxMarker(length, width, 0.0, 0.55f, 0.55f, 0.55f, 1.0f));
-      visual.markers.push_back(OutlineMarker(-0.5 * length, 0.5 * length,
-                                             width, 0.0f, 0.0f, 0.0f));
+      move.markers.push_back(
+          BoxMarker(length, width, 0.0, 0.851f, 0.863f, 0.878f, 1.0f));
+      move.markers.push_back(OutlineMarker(-0.5 * length, 0.5 * length,
+                                           width, 0.451f, 0.482f, 0.514f));
       visualization_msgs::Marker number;
       number.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
       number.pose.position.z = 0.06;
@@ -366,20 +378,15 @@ class SimulationNode {
       number.color.b = 0.0f;
       number.color.a = 1.0f;
       number.text = std::to_string(obstacle_number);
-      visual.markers.push_back(number);
+      move.markers.push_back(number);
     }
-    marker.controls.push_back(visual);
+    marker.controls.push_back(move);
 
     if (interactive) {
-      visualization_msgs::InteractiveMarkerControl move;
-      move.name = "move_xy";
-      move.orientation.w = 0.7071067812;
-      move.orientation.y = 0.7071067812;
-      move.interaction_mode =
-          visualization_msgs::InteractiveMarkerControl::MOVE_PLANE;
-      marker.controls.push_back(move);
       visualization_msgs::InteractiveMarkerControl rotate = move;
       rotate.name = "rotate_z";
+      rotate.always_visible = true;
+      rotate.markers.clear();
       rotate.interaction_mode =
           visualization_msgs::InteractiveMarkerControl::ROTATE_AXIS;
       marker.controls.push_back(rotate);
@@ -422,23 +429,43 @@ class SimulationNode {
 
   void HandleInteractiveFeedback(
       const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback) {
-    if (!feedback ||
-        feedback->event_type !=
-            visualization_msgs::InteractiveMarkerFeedback::MOUSE_UP) {
-      return;
-    }
+    if (!feedback) return;
     if (!interaction_enabled_ || planning_active_) {
       SyncInteractiveMarker(feedback->marker_name);
       return;
     }
+    if (feedback->event_type ==
+        visualization_msgs::InteractiveMarkerFeedback::MOUSE_DOWN) {
+      BeginEditing();
+      return;
+    }
+    if (feedback->event_type !=
+        visualization_msgs::InteractiveMarkerFeedback::MOUSE_UP) return;
+
+    const geometry_msgs::Pose committed = InteractivePose(feedback->marker_name);
+    double x = committed.position.x;
+    double y = committed.position.y;
+    double yaw = tf2::getYaw(committed.orientation);
+    if (feedback->control_name == "move_xy") {
+      x = feedback->pose.position.x;
+      y = feedback->pose.position.y;
+    } else if (feedback->control_name == "rotate_z") {
+      yaw = tf2::getYaw(feedback->pose.orientation);
+    } else {
+      SyncInteractiveMarker(feedback->marker_name);
+      return;
+    }
     std::string message;
-    const double yaw = tf2::getYaw(feedback->pose.orientation);
-    if (!ApplyPose(feedback->marker_name, feedback->pose.position.x,
-                   feedback->pose.position.y, yaw, &message)) {
+    if (!ApplyPose(feedback->marker_name, x, y, yaw, &message)) {
       SyncInteractiveMarker(feedback->marker_name);
       ROS_WARN("Interactive edit rejected for '%s': %s",
                feedback->marker_name.c_str(), message.c_str());
+      return;
     }
+    // A complete mouse gesture is also a complete edit.  This lets a user
+    // start the existing stationary detector without switching to the
+    // keyboard; another MOUSE_DOWN cleanly returns to editing.
+    BeginStationaryDetection();
   }
 
   void QueueCountdown() {

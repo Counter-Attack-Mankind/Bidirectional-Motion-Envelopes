@@ -9,9 +9,9 @@ map:
   y_max: 4.5
 
 goal:
-  x: 1.25
-  y: 4.0
-  yaw: -1.570796
+  x: 1.1765
+  y: 4.375
+  yaw: 0.0
 
 obstacles: []
 
@@ -63,3 +63,4 @@ visualization:
   playback_speed: 1.0
   playback_frequency: 100.0
   swept_area_resolution: 0.005
+  body_history_spacing: 0.005

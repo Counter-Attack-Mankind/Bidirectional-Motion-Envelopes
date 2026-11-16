@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <utility>
 
 namespace VisualizationPlot {
 namespace {
@@ -363,6 +364,46 @@ void VisualizationPlot::PlotVehicleFootprints(const Vector &xs, const Vector &ys
     int marker_id = (id_start >= 0) ? (id_start + static_cast<int>(i)) : -1;
     PlotPolygon(corner_xs, corner_ys, line_width, color, marker_id, ns);
   }
+}
+
+void VisualizationPlot::PlotVehicleFootprintBatch(
+    const Vector &xs, const Vector &ys, const Vector &thetas, double length,
+    double width, double rear_to_center, Color color, double line_width,
+    int id, const std::string &ns) {
+  assert(xs.size() == ys.size() && xs.size() == thetas.size());
+  visualization_msgs::Marker msg;
+  msg.header.frame_id = frame_;
+  msg.header.stamp = ros::Time();
+  msg.ns = ns;
+  msg.id = id;
+  msg.action = xs.empty() ? visualization_msgs::Marker::DELETE
+                          : visualization_msgs::Marker::ADD;
+  msg.type = visualization_msgs::Marker::LINE_LIST;
+  msg.pose.orientation.w = 1.0;
+  msg.scale.x = line_width;
+  msg.color = color.toColorRGBA();
+  msg.points.reserve(xs.size() * 8);
+  const double rear = -rear_to_center;
+  const double front = length - rear_to_center;
+  const double half_width = 0.5 * width;
+  for (std::size_t i = 0; i < xs.size(); ++i) {
+    const double c = std::cos(thetas[i]);
+    const double s = std::sin(thetas[i]);
+    geometry_msgs::Point corners[4];
+    const double longitudinal[4] = {rear, front, front, rear};
+    const double lateral[4] = {half_width, half_width, -half_width, -half_width};
+    for (int k = 0; k < 4; ++k) {
+      corners[k].x = xs[i] + longitudinal[k] * c - lateral[k] * s;
+      corners[k].y = ys[i] + longitudinal[k] * s + lateral[k] * c;
+      corners[k].z = 0.028;
+    }
+    for (int k = 0; k < 4; ++k) {
+      msg.points.push_back(corners[k]);
+      msg.points.push_back(corners[(k + 1) % 4]);
+    }
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  arr_.markers.push_back(std::move(msg));
 }
 
 void VisualizationPlot::Trigger() {

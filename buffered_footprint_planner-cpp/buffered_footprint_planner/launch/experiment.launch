@@ -4,6 +4,7 @@
   <arg name="playback_speed" default="1.0"/>
   <arg name="playback_frequency_hz" default="100.0"/>
   <arg name="swept_area_resolution" default="0.005"/>
+  <arg name="body_history_spacing" default="0.005"/>
   <arg name="save_debug_data" default="false"/>
   <arg name="show_hybrid_search" default="true"/>
   <arg name="tasks_root"
@@ -24,6 +25,8 @@
            value="$(arg playback_frequency_hz)"/>
     <param name="visualization/swept_area_resolution"
            value="$(arg swept_area_resolution)"/>
+    <param name="visualization/body_history_spacing"
+           value="$(arg body_history_spacing)"/>
     <param name="visualization/show_hybrid_search"
            value="$(arg show_hybrid_search)"/>
   </node>

@@ -34,8 +34,10 @@ catkin_package(
   INCLUDE_DIRS include
   LIBRARIES common_math common_util hybrid_astar visualization_plot
             scene_visualizer trajectory_player footprint_visualizer
-            swept_area_visualizer trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
+            swept_area_visualizer body_history_visualizer
+            trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
             real_vehicle_visualizer planning_config experiment_runner
+            paper_data_exporter
   CATKIN_DEPENDS geometry_msgs message_runtime roscpp std_msgs tf2
                  tf2_geometry_msgs visualization_msgs interactive_markers
                  sandbox_msgs
@@ -101,15 +103,21 @@ add_library(swept_area_visualizer visualize/swept_area_visualizer.cpp)
 target_link_libraries(swept_area_visualizer visualization_plot common_math
                       ${catkin_LIBRARIES})
 
+add_library(body_history_visualizer visualize/body_history_visualizer.cpp)
+target_link_libraries(body_history_visualizer visualization_plot common_math
+                      ${catkin_LIBRARIES})
+
 add_library(trajectory_playback_visualizer
   visualize/trajectory_playback_visualizer.cpp)
 target_link_libraries(trajectory_playback_visualizer trajectory_player
                       footprint_visualizer swept_area_visualizer
+                      body_history_visualizer
                       scene_visualizer ${catkin_LIBRARIES})
 
 add_library(real_vehicle_visualizer visualize/real_vehicle_visualizer.cpp)
 target_link_libraries(real_vehicle_visualizer footprint_visualizer
-                      swept_area_visualizer visualization_plot)
+                      swept_area_visualizer body_history_visualizer
+                      visualization_plot)
 
 add_library(footprint_optimizer
   optimizer/embodied_footprint.cpp
@@ -142,6 +150,9 @@ target_link_libraries(real_vehicle_execution experiment_manager scene_core commo
 add_library(real_vehicle_logger execution/real_vehicle_logger.cpp)
 target_link_libraries(real_vehicle_logger scene_core ${catkin_LIBRARIES})
 
+add_library(paper_data_exporter execution/paper_data_exporter.cpp)
+target_link_libraries(paper_data_exporter scene_core footprint_optimizer)
+
 add_executable(simulation_node src/simulation_node.cpp)
 target_link_libraries(simulation_node scene_core scene_visualizer ${catkin_LIBRARIES})
 add_dependencies(simulation_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
@@ -169,6 +180,7 @@ add_executable(real_vehicle_node src/real_vehicle_node.cpp)
 target_link_libraries(real_vehicle_node mocap_scene_provider
                       real_vehicle_execution planning_pipeline scene_core
                       real_vehicle_logger
+                      paper_data_exporter
                       scene_visualizer trajectory_playback_visualizer
                       real_vehicle_visualizer
                       ${catkin_LIBRARIES})
@@ -209,14 +221,32 @@ if(CATKIN_ENABLE_TESTING)
     tests/task_generation_regression.cpp)
   target_compile_options(task_generation_regression PRIVATE -UNDEBUG)
   add_test(NAME task_generation_regression COMMAND task_generation_regression)
+
+  add_executable(paper_data_exporter_regression
+    tests/paper_data_exporter_regression.cpp)
+  target_compile_options(paper_data_exporter_regression PRIVATE -UNDEBUG)
+  target_link_libraries(paper_data_exporter_regression paper_data_exporter
+                        experiment_logging)
+  add_test(NAME paper_data_exporter_regression
+           COMMAND paper_data_exporter_regression)
+
+  add_executable(visualization_resampling_regression
+    tests/visualization_resampling_regression.cpp)
+  target_compile_options(visualization_resampling_regression PRIVATE -UNDEBUG)
+  target_link_libraries(visualization_resampling_regression
+                        body_history_visualizer swept_area_visualizer)
+  add_test(NAME visualization_resampling_regression
+           COMMAND visualization_resampling_regression)
 endif()
 
 install(TARGETS common_math common_util hybrid_astar visualization_plot
                 scene_visualizer trajectory_player footprint_visualizer
-                swept_area_visualizer trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
+                swept_area_visualizer body_history_visualizer
+                trajectory_playback_visualizer footprint_optimizer scene_core experiment_logging planning_pipeline
                 real_vehicle_visualizer
                 planning_config experiment_runner experiment_manager mocap_scene_provider
                 real_vehicle_execution real_vehicle_logger simulation_node planning_node
+                paper_data_exporter
                 scene_recorder_node experiment_node real_vehicle_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

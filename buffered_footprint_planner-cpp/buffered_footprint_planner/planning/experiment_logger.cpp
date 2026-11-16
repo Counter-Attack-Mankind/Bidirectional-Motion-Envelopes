@@ -31,6 +31,25 @@ bool ExperimentLogger::CreateRunDirectory(const std::string& root,
     if (error) *error = "Cannot create results root: " + code.message();
     return false;
   }
+  if (mode == "real_vehicle") {
+    const fs::path real_root = fs::path(root) / "real_vehicle";
+    fs::create_directories(real_root, code);
+    if (code) {
+      if (error) *error = "Cannot create real-vehicle results root: " + code.message();
+      return false;
+    }
+    const fs::path candidate = real_root / ("task" + std::to_string(task_id));
+    if (!fs::create_directory(candidate, code)) {
+      if (error) {
+        *error = code ? "Cannot create task directory: " + code.message()
+                      : "Refusing to overwrite existing task directory: " +
+                            candidate.string();
+      }
+      return false;
+    }
+    if (directory) *directory = candidate.string();
+    return true;
+  }
   const auto now = std::chrono::system_clock::now();
   const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
       now.time_since_epoch()).count();

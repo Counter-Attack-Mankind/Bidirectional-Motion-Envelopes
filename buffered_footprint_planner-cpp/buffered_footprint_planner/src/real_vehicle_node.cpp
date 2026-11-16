@@ -16,6 +16,7 @@
 #include <std_msgs/Int32.h>
 
 #include "execution/experiment_manager.h"
+#include "execution/paper_data_exporter.h"
 #include "execution/real_vehicle_logger.h"
 #include "execution/task_generation.h"
 #include "execution/trajectory_adapter.h"
@@ -46,6 +47,11 @@ class RealVehicleNode {
       ROS_ERROR("Cannot load planning configuration: %s", error.c_str());
       return false;
     }
+    const std::uint64_t last_task_id =
+        execution::FindMaximumTaskId(configuration_.results_root);
+    manager_.InitializeTaskSequence(last_task_id);
+    ROS_INFO("Real-vehicle task sequence resumes after task%llu",
+             static_cast<unsigned long long>(last_task_id));
     private_node_.param("enable_execution", execution_enabled_, false);
     private_node_.param("visualization/show_hybrid_search",
                         show_hybrid_search_, true);
@@ -57,20 +63,23 @@ class RealVehicleNode {
     double playback_speed = 1.0;
     double playback_frequency = 100.0;
     double swept_resolution = 0.005;
+    double body_history_spacing = 0.005;
     private_node_.param("visualization/playback_speed", playback_speed,
                         playback_speed);
     private_node_.param("visualization/playback_frequency", playback_frequency,
                         playback_frequency);
     private_node_.param("visualization/swept_area_resolution", swept_resolution,
                         swept_resolution);
+    private_node_.param("visualization/body_history_spacing",
+                        body_history_spacing, body_history_spacing);
     if (!playback_.Initialize(private_node_, &visualizer_, configuration_.vehicle,
                               playback_speed, playback_frequency,
-                              swept_resolution, &error)) {
+                              swept_resolution, body_history_spacing, &error)) {
       ROS_ERROR("Cannot initialize trajectory playback: %s", error.c_str());
       return false;
     }
     if (!real_visualizer_.Initialize(configuration_.vehicle, swept_resolution,
-                                     &error)) {
+                                     body_history_spacing, &error)) {
       ROS_ERROR("Cannot initialize measured-track visualization: %s",
                 error.c_str());
       return false;
@@ -141,6 +150,8 @@ class RealVehicleNode {
       PublishEstop(true);
       manager_.AbortTask();
       logger_.Stop();
+      if (paper_exporter_.active())
+        paper_exporter_.FinishTask("execution_disabled", &latest_scene_.start);
       ROS_WARN("Real vehicle execution disabled at runtime");
     } else {
       ROS_WARN("Real vehicle execution authorized; the current state and next "
@@ -195,6 +206,7 @@ class RealVehicleNode {
       PublishEstop(true);
       manager_.TrackingFailed();
       logger_.Stop();
+      paper_exporter_.FinishTask("tracking_failed", &latest_scene_.start);
       AppendTaskRecord("tracking failed: " + message->reason,
                        "overall_experiment_status", "failed");
       ROS_ERROR("Task %u Vehicle%d tracking failed; stopped: %s",
@@ -206,6 +218,7 @@ class RealVehicleNode {
       PublishEstop(true);
       manager_.Reached(latest_scene_.start);
       logger_.Stop();
+      paper_exporter_.FinishTask("reached", &latest_scene_.start);
       AppendTaskRecord("tracking reached: " + message->reason,
                        "overall_experiment_status", "succeeded");
       ROS_INFO("Task %u Vehicle%d completed: %s", message->task_id,
@@ -270,6 +283,7 @@ class RealVehicleNode {
     planning_active_ = true;
     active_generation_ = generation;
     planned_vehicle_id_ = active_vehicle_id_;
+    planned_scene_ = frozen;
     playback_.StopAndClear();
     real_visualizer_.Clear();
     logger_.Stop();
@@ -371,6 +385,13 @@ class RealVehicleNode {
 
     const bool usable = result->success && manager_.frozen_scene_valid();
     active_result_directory_ = result->result_directory;
+    std::string paper_error;
+    if (!paper_exporter_.StartTask(
+            result->result_directory, planned_scene_,
+            result->success ? &result->optimization.trajectory : nullptr,
+            result->status, &paper_error)) {
+      ROS_ERROR("Cannot export paper data: %s", paper_error.c_str());
+    }
     AppendTaskRecord("planning finished: " + result->status,
                      "planning_status", usable ? "succeeded" : "failed");
     if (!usable)
@@ -390,6 +411,8 @@ class RealVehicleNode {
     manager_.PlanningFinished(usable, execute);
     if (!execute) {
       PublishEstop(true);
+      paper_exporter_.FinishTask(usable ? "not_executed" : "planning_failed",
+                                 nullptr);
       if (usable) {
         std::string playback_error;
         if (!playback_.Start(result->optimization.trajectory, &playback_error))
@@ -412,6 +435,7 @@ class RealVehicleNode {
             &error)) {
       PublishEstop(true);
       manager_.ForceSafeWait();
+      paper_exporter_.FinishTask("trajectory_adaptation_failed", nullptr);
       AppendTaskRecord("trajectory adaptation failed: " + error,
                        "trajectory_validation_status", "failed: " + error);
       ROS_ERROR("Refusing invalid optimized trajectory: %s", error.c_str());
@@ -462,6 +486,7 @@ class RealVehicleNode {
                      execution::ExperimentManager::State::kTracking) {
       real_visualizer_.Update(snapshot.start);
       logger_.LogPose(ros::Time::now().toSec(), snapshot.start);
+      paper_exporter_.LogClosedLoop(snapshot.start);
     }
     if (manager_.state() ==
             execution::ExperimentManager::State::kReadyToPlan &&
@@ -477,10 +502,12 @@ class RealVehicleNode {
   scene::MocapSceneProvider mocap_;
   execution::ExperimentManager manager_;
   execution::RealVehicleLogger logger_;
+  execution::PaperDataExporter paper_exporter_;
   visualization::SceneVisualizer visualizer_;
   visualization::TrajectoryPlaybackVisualizer playback_;
   visualization::RealVehicleVisualizer real_visualizer_;
   scene::SceneSnapshot latest_scene_;
+  scene::SceneSnapshot planned_scene_;
   ros::Publisher trajectory_publisher_;
   ros::Publisher object_publisher_;
   ros::Publisher estop_publisher_;

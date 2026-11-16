@@ -7,6 +7,7 @@
 #include "common/math/math_utils.h"
 #include "common/math/pose.h"
 #include "common/util/color.h"
+#include "visualize/visualization_palette.h"
 #include "visualize/visualization_plot.h"
 
 namespace visualization {
@@ -29,14 +30,14 @@ bool SweptAreaVisualizer::Initialize(const VehicleParameter& vehicle,
 }
 
 void SweptAreaVisualizer::Update(
-    const optimizer::TrajectoryNode& pose) {
+    const optimizer::TrajectoryNode& pose, bool forward) {
   if (!has_previous_pose_) {
-    RasterizeVehicle(pose);
+    RasterizeVehicle(pose, forward);
     previous_pose_ = pose;
     has_previous_pose_ = true;
     return;
   }
-  AddInterpolatedSweep(previous_pose_, pose);
+  AddInterpolatedSweep(previous_pose_, pose, forward);
   previous_pose_ = pose;
 }
 
@@ -44,40 +45,49 @@ void SweptAreaVisualizer::UpdateAlongTrajectory(
     const optimizer::Trajectory& trajectory,
     std::size_t previous_interval, std::size_t current_interval,
     const optimizer::TrajectoryNode& current_pose) {
-  if (trajectory.nodes.empty()) return;
+  if (trajectory.nodes.empty() || trajectory.intervals.empty()) return;
   const std::size_t first_boundary = previous_interval + 1;
   const std::size_t last_boundary = std::min(
       current_interval, trajectory.nodes.size() - 1);
   for (std::size_t node_index = first_boundary;
        node_index <= last_boundary; ++node_index) {
-    Update(trajectory.nodes[node_index]);
+    const std::size_t interval_index = std::min(
+        node_index - 1, trajectory.intervals.size() - 1);
+    Update(trajectory.nodes[node_index],
+           trajectory.intervals[interval_index].gear);
   }
-  Update(current_pose);
+  const std::size_t interval_index = std::min(
+      current_interval, trajectory.intervals.size() - 1);
+  Update(current_pose, trajectory.intervals[interval_index].gear);
 }
 
 void SweptAreaVisualizer::Reset(
-    const optimizer::TrajectoryNode& start_pose) {
+    const optimizer::TrajectoryNode& start_pose, bool forward) {
   Clear();
-  Update(start_pose);
+  Update(start_pose, forward);
 }
 
 void SweptAreaVisualizer::Clear() {
-  if (published_chunk_count_ > 0) {
-    VisualizationPlot::ClearMarkers(
-        marker_namespace_, 0,
-        static_cast<int>(published_chunk_count_ - 1));
-  }
-  occupied_cells_.clear();
-  marker_chunks_.clear();
-  first_dirty_chunk_ = std::numeric_limits<std::size_t>::max();
-  published_chunk_count_ = 0;
+  auto clear_layer = [&](DirectionLayer* layer, const std::string& suffix) {
+    if (layer->published_chunk_count > 0) {
+      VisualizationPlot::ClearMarkers(
+          marker_namespace_ + suffix, 0,
+          static_cast<int>(layer->published_chunk_count - 1));
+    }
+    layer->occupied_cells.clear();
+    layer->marker_chunks.clear();
+    layer->first_dirty_chunk = std::numeric_limits<std::size_t>::max();
+    layer->published_chunk_count = 0;
+  };
+  clear_layer(&forward_layer_, "_forward");
+  clear_layer(&reverse_layer_, "_reverse");
   raster_sample_count_ = 0;
   has_previous_pose_ = false;
 }
 
 void SweptAreaVisualizer::AddInterpolatedSweep(
     const optimizer::TrajectoryNode& first,
-    const optimizer::TrajectoryNode& second) {
+    const optimizer::TrajectoryNode& second, bool forward) {
   const double translation = std::hypot(second.x - first.x,
                                         second.y - first.y);
   const double angle = common::math::NormalizeAngle(
@@ -95,12 +105,12 @@ void SweptAreaVisualizer::AddInterpolatedSweep(
     pose.x = first.x + ratio * (second.x - first.x);
     pose.y = first.y + ratio * (second.y - first.y);
     pose.theta = common::math::NormalizeAngle(first.theta + ratio * angle);
-    RasterizeVehicle(pose);
+    RasterizeVehicle(pose, forward);
   }
 }
 
 void SweptAreaVisualizer::RasterizeVehicle(
-    const optimizer::TrajectoryNode& pose) {
+    const optimizer::TrajectoryNode& pose, bool forward) {
   ++raster_sample_count_;
   const auto box = vehicle_.GenerateBox(
       common::math::Pose(pose.x, pose.y, pose.theta));
@@ -117,21 +127,22 @@ void SweptAreaVisualizer::RasterizeVehicle(
       const common::math::Vec2d center(
           (static_cast<double>(x_index) + 0.5) * resolution_,
           (static_cast<double>(y_index) + 0.5) * resolution_);
-      if (box.IsPointIn(center)) AddCell(x_index, y_index);
+      if (box.IsPointIn(center)) AddCell(x_index, y_index, forward);
     }
   }
 }
 
 void SweptAreaVisualizer::AddCell(std::int32_t x_index,
-                                  std::int32_t y_index) {
-  if (!occupied_cells_.insert(CellKey(x_index, y_index)).second) return;
+                                  std::int32_t y_index, bool forward) {
+  DirectionLayer& layer = forward ? forward_layer_ : reverse_layer_;
+  if (!layer.occupied_cells.insert(CellKey(x_index, y_index)).second) return;
   const std::size_t chunk_index =
-      (occupied_cells_.size() - 1) / kCellsPerMarker;
-  if (chunk_index >= marker_chunks_.size()) marker_chunks_.emplace_back();
-  marker_chunks_[chunk_index].emplace_back(
+      (layer.occupied_cells.size() - 1) / kCellsPerMarker;
+  if (chunk_index >= layer.marker_chunks.size()) layer.marker_chunks.emplace_back();
+  layer.marker_chunks[chunk_index].emplace_back(
       (static_cast<double>(x_index) + 0.5) * resolution_,
       (static_cast<double>(y_index) + 0.5) * resolution_);
-  first_dirty_chunk_ = std::min(first_dirty_chunk_, chunk_index);
+  layer.first_dirty_chunk = std::min(layer.first_dirty_chunk, chunk_index);
 }
 
 std::uint64_t SweptAreaVisualizer::CellKey(std::int32_t x_index,
@@ -142,25 +153,32 @@ std::uint64_t SweptAreaVisualizer::CellKey(std::int32_t x_index,
 }
 
 void SweptAreaVisualizer::QueueDirtyMarkers() {
-  if (first_dirty_chunk_ == std::numeric_limits<std::size_t>::max()) return;
-  Color fill = Color::fromRGB(0.35f, 0.78f, 1.0f);
-  fill.set_a(0.30);
-  for (std::size_t index = first_dirty_chunk_;
-       index < marker_chunks_.size(); ++index) {
-    std::vector<double> x;
-    std::vector<double> y;
-    x.reserve(marker_chunks_[index].size());
-    y.reserve(marker_chunks_[index].size());
-    for (const auto& cell : marker_chunks_[index]) {
-      x.push_back(cell.x());
-      y.push_back(cell.y());
+  auto queue_layer = [&](DirectionLayer* layer, bool forward,
+                         const std::string& suffix) {
+    if (layer->first_dirty_chunk ==
+        std::numeric_limits<std::size_t>::max()) return;
+    const Color fill = palette::WithAlpha(
+        forward ? palette::Forward() : palette::Reverse(),
+        palette::kSweptFillAlpha);
+    for (std::size_t index = layer->first_dirty_chunk;
+         index < layer->marker_chunks.size(); ++index) {
+      std::vector<double> x;
+      std::vector<double> y;
+      x.reserve(layer->marker_chunks[index].size());
+      y.reserve(layer->marker_chunks[index].size());
+      for (const auto& cell : layer->marker_chunks[index]) {
+        x.push_back(cell.x());
+        y.push_back(cell.y());
+      }
+      VisualizationPlot::PlotGridCells(
+          x, y, resolution_, fill, static_cast<int>(index),
+          marker_namespace_ + suffix, 0.008, 0.01);
     }
-    VisualizationPlot::PlotGridCells(
-        x, y, resolution_, fill, static_cast<int>(index),
-        marker_namespace_, 0.008, 0.01);
-  }
-  published_chunk_count_ = marker_chunks_.size();
-  first_dirty_chunk_ = std::numeric_limits<std::size_t>::max();
+    layer->published_chunk_count = layer->marker_chunks.size();
+    layer->first_dirty_chunk = std::numeric_limits<std::size_t>::max();
+  };
+  queue_layer(&forward_layer_, true, "_forward");
+  queue_layer(&reverse_layer_, false, "_reverse");
 }
 
 }  // namespace visualization

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "common/math/polygon2d.h"
+#include "visualize/visualization_palette.h"
 #include "visualize/visualization_plot.h"
 
 namespace visualization {
@@ -40,9 +41,10 @@ void SceneVisualizer::QueueObstacle(const scene::SceneObstacle& obstacle,
                                     std::size_t index) const {
   const auto polygon = obstacle.polygon();
   const int marker_id = static_cast<int>(index);
-  VisualizationPlot::PlotFilledPolygon(polygon, Color::Grey, marker_id,
+  VisualizationPlot::PlotFilledPolygon(polygon, palette::ObstacleFill(), marker_id,
                                        "scene_obstacle_fill", 0.01);
-  VisualizationPlot::PlotPolygon(polygon, 0.012, Color::Black, marker_id,
+  VisualizationPlot::PlotPolygon(polygon, palette::kObstacleLineWidth,
+                                 palette::ObstacleEdge(), marker_id,
                                  "scene_obstacle_outline");
   VisualizationPlot::PlotText(obstacle.x, obstacle.y,
                               std::to_string(index + 1), 0.08, Color::Black,
@@ -56,7 +58,8 @@ void SceneVisualizer::QueuePose(const scene::Pose2d& pose,
   const auto box = vehicle_.GenerateBox(
       common::math::Pose(pose.x, pose.y, pose.yaw));
   const std::string prefix = "scene_" + role;
-  VisualizationPlot::PlotPolygon(common::math::Polygon2d(box), 0.015, color,
+  VisualizationPlot::PlotPolygon(common::math::Polygon2d(box),
+                                 palette::kVehicleLineWidth, color,
                                  0, prefix + "_body");
   VisualizationPlot::PlotPoints({pose.x}, {pose.y}, color, 0.04, 0,
                                 prefix + "_rear_axle");
@@ -75,16 +78,16 @@ void SceneVisualizer::QueuePose(const scene::Pose2d& pose,
 void SceneVisualizer::QueueStart(const scene::Pose2d& start,
                                  bool locked) const {
   QueuePose(start, "start", locked ? "START LOCKED" : "START",
-            Color::Green);
+            palette::Start());
 }
 
 void SceneVisualizer::QueueVehicle(const scene::Pose2d& pose,
                                    const std::string& label) const {
-  QueuePose(pose, "mocap_vehicle", label, Color::Green);
+  QueuePose(pose, "mocap_vehicle", label, palette::Start());
 }
 
 void SceneVisualizer::QueueGoal(const scene::Pose2d& goal) const {
-  QueuePose(goal, "goal", "GOAL", Color::Magenta);
+  QueuePose(goal, "goal", "GOAL", palette::Goal());
 }
 
 void SceneVisualizer::QueuePlanningStage(
@@ -117,11 +120,7 @@ void SceneVisualizer::QueueHybridPath(
     const planning::HybridAStartResult& path) const {
   if (path.x.empty() || path.x.size() != path.y.size()) return;
   ClearHybridSearch();
-  std::vector<Color> colors(path.x.size(), Color::Green);
-  for (std::size_t i = 0; i < colors.size() && i < path.gear.size(); ++i) {
-    if (!path.gear[i]) colors[i] = Color::Cyan;
-  }
-  VisualizationPlot::Plot(path.x, path.y, 0.025, colors, 0,
+  VisualizationPlot::Plot(path.x, path.y, 0.025, palette::HybridPath(), 0,
                           "hybrid_astar_path");
 }
 
@@ -135,7 +134,7 @@ void SceneVisualizer::QueueHybridSearch(
   }
   if (progress.backtrack_x.size() >= 2) {
     VisualizationPlot::Plot(progress.backtrack_x, progress.backtrack_y, 0.012,
-                            Color::fromRGB(1.0f, 0.55f, 0.0f), 0,
+                            palette::Reverse(), 0,
                             "hybrid_search_backtrack");
   }
   if (progress.has_current) {
@@ -144,7 +143,7 @@ void SceneVisualizer::QueueHybridSearch(
         progress.current_x, progress.current_y,
         progress.current_x + kArrowLength * std::cos(progress.current_phi),
         progress.current_y + kArrowLength * std::sin(progress.current_phi),
-        Color::Yellow, 0, "hybrid_search_current", 0.010, 0.028,
+        palette::Error(), 0, "hybrid_search_current", 0.010, 0.028,
         0.035, 0.05);
   }
 
@@ -168,7 +167,7 @@ void SceneVisualizer::QueueOptimizedTrajectory(
                      trajectory.intervals[i + 1].gear != forward;
     if (!end) continue;
     VisualizationPlot::Plot(x, y, 0.03,
-                            forward ? Color::Blue : Color::Red,
+                            forward ? palette::Forward() : palette::Reverse(),
                             marker_id++, "optimized_trajectory");
     if (i + 1 < trajectory.intervals.size()) {
       x = {trajectory.nodes[i + 1].x};
@@ -189,7 +188,7 @@ void SceneVisualizer::QueueOptimizedConfigurationPoints(
     y.push_back(node.y);
   }
   VisualizationPlot::PlotSpheres(
-      x, y, Color::Red, 0.012, 0,
+      x, y, palette::Error(), 0.012, 0,
       "trajectory_optimized_configurations", 0.05);
 }
 
@@ -197,7 +196,7 @@ void SceneVisualizer::QueuePlaybackVehicle(const PlaybackState& state) const {
   const auto& pose = state.pose;
   const auto box = vehicle_.GenerateBox(
       common::math::Pose(pose.x, pose.y, pose.theta));
-  const Color color = state.gear ? Color::Blue : Color::Red;
+  const Color color = state.gear ? palette::Forward() : palette::Reverse();
   VisualizationPlot::PlotPolygon(
       common::math::Polygon2d(box), 0.018, color, 0,
       "trajectory_vehicle_body");

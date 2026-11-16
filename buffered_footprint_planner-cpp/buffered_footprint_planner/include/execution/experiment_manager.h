@@ -39,6 +39,7 @@ class ExperimentManager {
   void TrackingFailed();
   void ForceSafeWait();
   void AbortTask();
+  void InitializeTaskSequence(std::uint64_t last_task_id);
 
   static double ObstacleBoundaryDistance(
       const scene::SceneObstacle& lhs, const scene::SceneObstacle& rhs);

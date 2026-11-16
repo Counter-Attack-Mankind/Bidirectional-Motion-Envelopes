@@ -8,7 +8,7 @@ bool TrajectoryPlaybackVisualizer::Initialize(
     ros::NodeHandle& node, SceneVisualizer* scene_visualizer,
     const VehicleParameter& vehicle, double playback_speed,
     double playback_frequency_hz, double swept_area_resolution,
-    std::string* error) {
+    double body_history_spacing, std::string* error) {
   if (!scene_visualizer) {
     if (error) *error = "Scene visualizer is null";
     return false;
@@ -26,6 +26,8 @@ bool TrajectoryPlaybackVisualizer::Initialize(
           vehicle, swept_area_resolution, error)) {
     return false;
   }
+  if (!body_history_visualizer_.Initialize(
+          vehicle, body_history_spacing, error)) return false;
   node_ = &node;
   scene_visualizer_ = scene_visualizer;
   vehicle_ = vehicle;
@@ -65,6 +67,7 @@ bool TrajectoryPlaybackVisualizer::Start(
 void TrajectoryPlaybackVisualizer::StopAndClear() {
   player_.Stop();
   footprint_visualizer_.Clear();
+  body_history_visualizer_.Clear();
   swept_area_visualizer_.Clear();
   if (scene_visualizer_) {
     scene_visualizer_->ClearTrajectoryPlayback();
@@ -77,14 +80,16 @@ void TrajectoryPlaybackVisualizer::StopAndClear() {
 void TrajectoryPlaybackVisualizer::UpdateSweptArea(
     const PlaybackState& state) {
   if (!has_previous_state_) {
-    swept_area_visualizer_.Reset(state.pose);
+    swept_area_visualizer_.Reset(state.pose, state.gear);
+    body_history_visualizer_.Reset(state.pose, state.gear);
     previous_state_ = state;
     has_previous_state_ = true;
     return;
   }
   if (state.new_cycle ||
       state.trajectory_time + 1e-12 < previous_state_.trajectory_time) {
-    swept_area_visualizer_.Reset(state.pose);
+    swept_area_visualizer_.Reset(state.pose, state.gear);
+    body_history_visualizer_.Reset(state.pose, state.gear);
     previous_state_ = state;
     return;
   }
@@ -92,6 +97,7 @@ void TrajectoryPlaybackVisualizer::UpdateSweptArea(
   swept_area_visualizer_.UpdateAlongTrajectory(
       trajectory_, previous_state_.interval_index, state.interval_index,
       state.pose);
+  body_history_visualizer_.Update(state.pose, state.gear);
   previous_state_ = state;
 }
 
@@ -106,6 +112,7 @@ void TrajectoryPlaybackVisualizer::OnPlaybackState(
              swept_area_visualizer_.cell_count(),
              swept_area_visualizer_.raster_sample_count());
     footprint_visualizer_.Clear();
+    body_history_visualizer_.Clear();
   }
   UpdateSweptArea(state);
   footprint_visualizer_.Update(
@@ -113,6 +120,7 @@ void TrajectoryPlaybackVisualizer::OnPlaybackState(
       state.new_cycle);
   scene_visualizer_->QueuePlaybackVehicle(state);
   swept_area_visualizer_.QueueDirtyMarkers();
+  body_history_visualizer_.QueueMarkers();
   scene_visualizer_->Trigger();
 }
 

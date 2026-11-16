@@ -54,17 +54,21 @@ class PlanningNode {
     double playback_speed = 1.0;
     double playback_frequency_hz = 100.0;
     double swept_area_resolution = 0.005;
+    double body_history_spacing = 0.005;
     private_node_.param("visualization/playback_speed", playback_speed, 1.0);
     private_node_.param("visualization/playback_frequency_hz",
                         playback_frequency_hz, 100.0);
     private_node_.param("visualization/swept_area_resolution",
                         swept_area_resolution, 0.005);
+    private_node_.param("visualization/body_history_spacing",
+                        body_history_spacing, 0.005);
     private_node_.param("visualization/show_hybrid_search",
                         show_hybrid_search_, true);
     if (!playback_.Initialize(private_node_, &visualizer_,
                               configuration_.vehicle, playback_speed,
                               playback_frequency_hz,
-                              swept_area_resolution, &error)) {
+                              swept_area_resolution, body_history_spacing,
+                              &error)) {
       ROS_ERROR("Cannot initialize live trajectory visualization: %s",
                 error.c_str());
       return false;

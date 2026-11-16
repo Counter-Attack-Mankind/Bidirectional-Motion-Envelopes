@@ -69,6 +69,13 @@ void PlotVehicleFootprints(const Vector &xs, const Vector &ys, const Vector &the
                            Color color = Color::White, double line_width = 0.05,
                            int id_start = -1, const std::string &ns = "");
 
+// Batch all historical rectangles into one LINE_LIST marker.
+void PlotVehicleFootprintBatch(const Vector &xs, const Vector &ys,
+                               const Vector &thetas, double length,
+                               double width, double rear_to_center,
+                               Color color, double line_width, int id,
+                               const std::string &ns);
+
 void Trigger();
 
 void Clear();
