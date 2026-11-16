@@ -134,7 +134,7 @@ bool NormalizeResult(const HybridAStartResult& raw, bool reverse_search,
         std::abs(steer - expected_steer) >
             kSteeringConsistencyTolerance ||
         std::abs(steer) > vehicle.delta_max +
-                              kSteeringConsistencyTolerance) {
+                               kSteeringBoundTolerance) {
       if (error) *error = "Hybrid A* steering is inconsistent with path geometry";
       return false;
     }
