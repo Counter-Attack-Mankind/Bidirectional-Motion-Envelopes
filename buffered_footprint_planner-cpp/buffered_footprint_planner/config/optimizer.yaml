@@ -5,7 +5,7 @@ initial_guess_dmin: 0.015
 dmin: 0.010
 total_time_limit: 35.0
 ipopt_max_iterations: 399984
-ipopt_max_cpu_time: 10.0
+ipopt_max_cpu_time: 5.0
 ipopt_tolerance: 1.0e-3
 ipopt_acceptable_tol: 1.0e-2
 ipopt_acceptable_iter: 3
