@@ -59,7 +59,7 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   node.param("analytic_expansion_cost", planner.analytic_expansion_cost, 20.0);
   node.param("dubins_phi_gamma", planner.dubins_phi_gamma, 1.1);
   node.param("hybrid_astar_timeout", planner.hybrid_astar_timeout, 8.0);
-  node.param("search_clearance", planner.search_clearance, 0.020);
+  node.param("search_clearance", planner.search_clearance, 0.025);
   int next_node_num = 20;
   int explore_node_num = 2000000;
   node.param("next_node_num", next_node_num, next_node_num);
@@ -76,12 +76,12 @@ bool LoadPlanningConfiguration(const ros::NodeHandle& node,
   initial.reverse_speed = vehicle.v_reverse_max;
   initial.max_acceleration = vehicle.a_max;
   initial.max_steering_rate = vehicle.omega_max;
-  node.param("initial_guess_dmin", initial.dmin, 0.015);
+  node.param("initial_guess_dmin", initial.dmin, 0.020);
 
   auto& nlp = configuration->nlp;
   nlp.min_dt = initial.min_dt;
   nlp.max_dt = initial.max_dt;
-  node.param("dmin", nlp.dmin, 0.010);
+  node.param("dmin", nlp.dmin, 0.020);
   node.param("total_time_limit", nlp.total_time_limit, 35.0);
   initial.total_time_limit = nlp.total_time_limit;
   node.param("ipopt_max_iterations", nlp.max_iterations, 399984);

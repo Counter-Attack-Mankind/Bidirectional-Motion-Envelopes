@@ -14,7 +14,7 @@ struct FootprintNlpConfig {
   double min_dt = 0.0001;
   double max_dt = 0.0500;
   double total_time_limit = 35.0;
-  double dmin = 0.010;
+  double dmin = 0.020;
   double tolerance = 1e-3;
   double acceptable_tolerance = 1e-2;
   int acceptable_iterations = 3;

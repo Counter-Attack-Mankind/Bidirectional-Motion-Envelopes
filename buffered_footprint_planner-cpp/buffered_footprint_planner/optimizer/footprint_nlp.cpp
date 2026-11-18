@@ -656,6 +656,71 @@ OptimizationResult SolveFootprintNlp(
     snapshot->available = true;
   };
 
+  auto reset_evaluation = [&]() {
+    result.diagnostics = NlpConstraintDiagnostics{};
+    result.max_dynamics_residual = 0.0;
+    result.max_variable_bound_violation = 0.0;
+    result.max_footprint_validity_violation = 0.0;
+    result.max_obca_violation = 0.0;
+    result.max_map_boundary_violation = 0.0;
+    result.max_dynamics_location.clear();
+    result.max_variable_bound_location.clear();
+    result.max_footprint_validity_location.clear();
+    result.max_obca_location.clear();
+    result.max_map_boundary_location.clear();
+  };
+
+  auto snapshot_is_finite = [&](const NlpIterateSnapshot& snapshot) {
+    if (!snapshot.available ||
+        snapshot.trajectory.nodes.size() != node_count ||
+        snapshot.trajectory.intervals.size() != interval_count ||
+        snapshot.k.size() != interval_count ||
+        snapshot.s.size() != interval_count ||
+        snapshot.splus.size() != interval_count ||
+        snapshot.sminus.size() != interval_count ||
+        snapshot.up.size() != interval_count ||
+        snapshot.down.size() != interval_count ||
+        snapshot.left.size() != interval_count ||
+        snapshot.right.size() != interval_count ||
+        snapshot.corners.size() != interval_count ||
+        snapshot.lambda.size() != obca_column_count ||
+        snapshot.mu.size() != obca_column_count ||
+        snapshot.obca_qx.size() != obca_column_count ||
+        snapshot.obca_qy.size() != obca_column_count ||
+        !std::isfinite(snapshot.total_time)) return false;
+    auto finite = [](double value) { return std::isfinite(value); };
+    for (const auto& node : snapshot.trajectory.nodes) {
+      if (!finite(node.x) || !finite(node.y) || !finite(node.theta) ||
+          !finite(node.v) || !finite(node.a) || !finite(node.phy) ||
+          !finite(node.w)) return false;
+    }
+    for (std::size_t i = 0; i < interval_count; ++i) {
+      const auto& interval = snapshot.trajectory.intervals[i];
+      if (!finite(interval.dt) || !finite(interval.s) ||
+          !finite(interval.k) || !finite(interval.splus) ||
+          !finite(interval.sminus) || !finite(interval.up) ||
+          !finite(interval.down) || !finite(interval.left) ||
+          !finite(interval.right) || !finite(snapshot.k[i]) ||
+          !finite(snapshot.s[i]) || !finite(snapshot.splus[i]) ||
+          !finite(snapshot.sminus[i]) || !finite(snapshot.up[i]) ||
+          !finite(snapshot.down[i]) || !finite(snapshot.left[i]) ||
+          !finite(snapshot.right[i])) return false;
+      for (const auto& corner : interval.corners)
+        if (!finite(corner.x()) || !finite(corner.y())) return false;
+      for (double coordinate : snapshot.corners[i])
+        if (!finite(coordinate)) return false;
+    }
+    for (std::size_t column = 0; column < obca_column_count; ++column) {
+      if (!finite(snapshot.obca_qx[column]) ||
+          !finite(snapshot.obca_qy[column])) return false;
+      for (std::size_t edge = 0; edge < 4; ++edge) {
+        if (!finite(snapshot.lambda[column][edge]) ||
+            !finite(snapshot.mu[column][edge])) return false;
+      }
+    }
+    return true;
+  };
+
   auto evaluate_snapshot = [&](const NlpIterateSnapshot& snapshot) {
     auto& diagnostics = result.diagnostics;
     double dt_sum = 0.0;
@@ -921,6 +986,34 @@ OptimizationResult SolveFootprintNlp(
     result.map_boundary_check_count = 16 * interval_count;
   };
 
+  auto snapshot_is_feasible = [&](const NlpIterateSnapshot& snapshot) {
+    reset_evaluation();
+    if (!snapshot_is_finite(snapshot)) return false;
+    evaluate_snapshot(snapshot);
+    const double limit = config.constraint_validation_tolerance;
+    const auto& d = result.diagnostics;
+    const std::array<const MaximumViolation*, 29> checks{{
+        &d.dynamics_x_m, &d.dynamics_y_m, &d.dynamics_theta_rad,
+        &d.dynamics_v_mps, &d.dynamics_phi_rad, &d.velocity_bound_mps,
+        &d.acceleration_bound_mps2, &d.steering_bound_rad,
+        &d.steering_rate_bound_radps, &d.time_step_bound_s,
+        &d.endpoint_x_m, &d.endpoint_y_m, &d.endpoint_theta_rad,
+        &d.endpoint_v_mps, &d.endpoint_acceleration_mps2,
+        &d.endpoint_phi_rad, &d.endpoint_steering_rate_radps,
+        &d.total_time_equality_s, &d.total_time_bound_s,
+        &d.ef_curvature_equality_1pm, &d.ef_distance_equality_m,
+        &d.ef_corner_equality_m, &d.ef_arc, &d.obca_q_definition,
+        &d.obca_separation_m, &d.obca_dual_equality, &d.obca_norm,
+        &d.obca_nonnegative, &d.map_boundary_m}};
+    for (const auto* check : checks)
+      if (!std::isfinite(check->value) || check->value > limit) return false;
+    return result.max_dynamics_residual <= limit &&
+           result.max_variable_bound_violation <= limit &&
+           result.max_footprint_validity_violation <= limit &&
+           result.max_obca_violation <= limit &&
+           result.max_map_boundary_violation <= limit;
+  };
+
   casadi::Dict solver_options;
   solver_options["max_iter"] = config.max_iterations;
   solver_options["max_cpu_time"] = config.max_cpu_time;
@@ -981,15 +1074,14 @@ OptimizationResult SolveFootprintNlp(
     result.objective = static_cast<double>(solution.value(objective));
     NlpIterateSnapshot solution_snapshot;
     extract_snapshot(solution, &solution_snapshot);
-    evaluate_snapshot(solution_snapshot);
-    result.trajectory = solution_snapshot.trajectory;
-    const double residual_limit = config.constraint_validation_tolerance;
+    result.normal_solution_available = solution_snapshot.available;
+    result.normal_solution_validated = snapshot_is_feasible(solution_snapshot);
     result.success = result.solver_succeeded &&
-                     result.max_dynamics_residual <= residual_limit &&
-                     result.max_variable_bound_violation <= residual_limit &&
-                     result.max_footprint_validity_violation <= residual_limit &&
-                     result.max_obca_violation <= residual_limit &&
-                     result.max_map_boundary_violation <= residual_limit;
+                     result.normal_solution_validated;
+    if (result.success) {
+      result.trajectory = solution_snapshot.trajectory;
+      result.solution_class = "normal_converged";
+    }
     if (!result.success) {
       result.last_iterate = std::move(solution_snapshot);
       result.last_iterate_available = result.last_iterate.available;
@@ -1011,7 +1103,17 @@ OptimizationResult SolveFootprintNlp(
       const casadi::OptiAdvanced debug = opti.debug();
       extract_snapshot(debug, &result.last_iterate);
       result.last_iterate_available = result.last_iterate.available;
-      evaluate_snapshot(result.last_iterate);
+      result.feasible_fallback_available = result.last_iterate_available;
+      result.feasible_fallback_validated =
+          snapshot_is_feasible(result.last_iterate);
+      if (result.feasible_fallback_validated) {
+        result.trajectory = result.last_iterate.trajectory;
+        result.feasible_fallback_used = true;
+        result.solution_class = "feasible_last_iterate_not_optimal";
+        result.success = true;
+        result.status += "; feasible last iterate pending independent safety "
+                         "and executability validation (not optimal)";
+      }
     } catch (const std::exception& debug_exception) {
       result.last_iterate.extraction_error = debug_exception.what();
       if (!result.diagnostic_error.empty()) result.diagnostic_error += "; ";
@@ -1122,6 +1224,15 @@ bool SaveNlpFailureDiagnostics(const std::string& debug_directory,
          << "iterations=" << result.iterations << '\n'
          << "solve_time_s=" << result.solve_time << '\n'
          << "last_iterate_available=" << result.last_iterate_available << '\n'
+         << "solution_class=" << result.solution_class << '\n'
+         << "feasible_fallback_available="
+         << result.feasible_fallback_available << '\n'
+         << "feasible_fallback_validated="
+         << result.feasible_fallback_validated << '\n'
+         << "independent_collision_validated="
+         << result.independent_collision_validated << '\n'
+         << "downstream_executable_validated="
+         << result.downstream_executable_validated << '\n'
          << "last_iterate_is_executable=false\n"
          << "diagnostic_error=" << result.diagnostic_error << '\n';
   auto write = [&](const char* name, const MaximumViolation& violation) {

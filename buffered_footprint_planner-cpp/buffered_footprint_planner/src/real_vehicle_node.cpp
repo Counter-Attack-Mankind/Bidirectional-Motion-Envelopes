@@ -462,8 +462,11 @@ class RealVehicleNode {
                        "overall_experiment_status", "failed");
     AppendTaskRecord(result->hybrid_succeeded ? "Hybrid A* succeeded"
                                               : "Hybrid A* failed");
-    AppendTaskRecord(result->optimization.success ? "NLP optimization succeeded"
-                                                  : "NLP optimization failed");
+    AppendTaskRecord(
+        result->optimization.feasible_fallback_used
+            ? "NLP feasible last-iterate fallback accepted (not optimal)"
+            : (result->optimization.success ? "NLP optimization succeeded"
+                                            : "NLP optimization failed"));
     if (usable) {
       visualizer_.QueueOptimizedTrajectory(result->optimization.trajectory);
       visualizer_.QueueOptimizedConfigurationPoints(

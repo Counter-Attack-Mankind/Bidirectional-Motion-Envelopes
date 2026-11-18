@@ -34,7 +34,8 @@ const char* GearName(int gear) { return gear > 0 ? "FORWARD" : "REVERSE"; }
 
 enum class Phase {
   kWaiting, kPreparing, kFollowing, kApproachingCusp, kCuspBraking,
-  kCuspStopConfirm, kFinalApproach, kFinalStopConfirm, kCompleted, kFailed
+  kCuspStopConfirm, kCuspSteeringPrepare, kFinalApproach,
+  kFinalStopConfirm, kCompleted, kFailed
 };
 
 const char* PhaseName(Phase phase) {
@@ -45,6 +46,7 @@ const char* PhaseName(Phase phase) {
     case Phase::kApproachingCusp: return "APPROACHING_CUSP";
     case Phase::kCuspBraking: return "CUSP_BRAKING";
     case Phase::kCuspStopConfirm: return "CUSP_STOP_CONFIRM";
+    case Phase::kCuspSteeringPrepare: return "CUSP_STEERING_PREPARE";
     case Phase::kFinalApproach: return "FINAL_APPROACH";
     case Phase::kFinalStopConfirm: return "FINAL_STOP_CONFIRM";
     case Phase::kCompleted: return "COMPLETED";
@@ -61,34 +63,69 @@ class TrackingVisualization {
         "/pure_pursuit", 20, true);
   }
   void SetTarget(int target) { target_ = target; }
+  void ClearVirtual() {
+    const ros::Time now = ros::Time::now();
+    const std::string ns = "Tracking_V" + std::to_string(target_);
+    for (int id : {2, 5, 7}) {
+      visualization_msgs::Marker marker;
+      marker.header.frame_id = frame_; marker.header.stamp = now;
+      marker.ns = ns; marker.id = id;
+      marker.action = visualization_msgs::Marker::DELETE;
+      publisher_.publish(marker);
+    }
+  }
   void Draw(const pure_pursuit::TrackingPoint& projected,
             const pure_pursuit::TrackingPoint& reference,
             double lookahead_x, double lookahead_y,
             const pure_pursuit::TrackingPoint& segment_end,
             const std::string& state, int segment, int gear,
-            double actual_s, double reference_time) {
+            double actual_s, double reference_time, double vehicle_x,
+            double vehicle_y, bool virtual_lookahead,
+            double virtual_extension) {
     const ros::Time now = ros::Time::now();
     const std::string ns = "Tracking_V" + std::to_string(target_);
-    visualization_msgs::Marker points;
-    points.header.frame_id = frame_;
-    points.header.stamp = now;
-    points.ns = ns; points.id = 0;
-    points.type = visualization_msgs::Marker::SPHERE_LIST;
-    points.action = visualization_msgs::Marker::ADD;
-    points.pose.orientation.w = 1.0;
-    points.scale.x = points.scale.y = points.scale.z = 0.045;
-    points.color.g = points.color.a = 1.0;
-    geometry_msgs::Point point;
-    point.x = projected.x; point.y = projected.y; point.z = 0.04;
-    points.points.push_back(point);
-    point.x = reference.x; point.y = reference.y; point.z = 0.06;
-    points.points.push_back(point);
-    point.x = lookahead_x; point.y = lookahead_y; point.z = 0.08;
-    points.points.push_back(point);
-    publisher_.publish(points);
+    auto sphere = [&](int id, double x, double y, double size,
+                      float r, float g, float b) {
+      visualization_msgs::Marker marker;
+      marker.header.frame_id = frame_; marker.header.stamp = now;
+      marker.ns = ns; marker.id = id;
+      marker.type = visualization_msgs::Marker::SPHERE;
+      marker.action = visualization_msgs::Marker::ADD;
+      marker.pose.orientation.w = 1.0;
+      marker.pose.position.x = x; marker.pose.position.y = y;
+      marker.pose.position.z = 0.06;
+      marker.scale.x = marker.scale.y = marker.scale.z = size;
+      marker.color.r = r; marker.color.g = g; marker.color.b = b;
+      marker.color.a = 1.0;
+      publisher_.publish(marker);
+    };
+    // Projection, longitudinal time reference, and lateral lookahead are
+    // intentionally separate diagnostics.
+    sphere(0, projected.x, projected.y, 0.038, 0.20f, 0.75f, 1.0f);
+    sphere(1, reference.x, reference.y, 0.042, 0.70f, 0.45f, 0.95f);
+    sphere(2, lookahead_x, lookahead_y,
+           virtual_lookahead ? 0.075 : 0.055,
+           virtual_lookahead ? 1.0f : 0.0f,
+           virtual_lookahead ? 0.22f : 1.0f,
+           virtual_lookahead ? 0.02f : 0.30f);
+
+    visualization_msgs::Marker connection;
+    connection.header.frame_id = frame_; connection.header.stamp = now;
+    connection.ns = ns; connection.id = 3;
+    connection.type = visualization_msgs::Marker::LINE_LIST;
+    connection.action = visualization_msgs::Marker::ADD;
+    connection.pose.orientation.w = 1.0; connection.scale.x = 0.008;
+    connection.color.r = 0.25; connection.color.g = 0.75;
+    connection.color.b = 0.95; connection.color.a = 0.9;
+    geometry_msgs::Point p; p.x = vehicle_x; p.y = vehicle_y; p.z = 0.035;
+    connection.points.push_back(p);
+    p.x = lookahead_x; p.y = lookahead_y;
+    connection.points.push_back(p);
+    publisher_.publish(connection);
 
     visualization_msgs::Marker cusp;
-    cusp.header = points.header; cusp.ns = ns; cusp.id = 1;
+    cusp.header.frame_id = frame_; cusp.header.stamp = now;
+    cusp.ns = ns; cusp.id = 4;
     cusp.type = visualization_msgs::Marker::CYLINDER;
     cusp.action = visualization_msgs::Marker::ADD;
     cusp.pose.orientation.w = 1.0;
@@ -99,20 +136,25 @@ class TrackingVisualization {
     cusp.color.r = cusp.color.a = 1.0; cusp.color.g = 0.35;
     publisher_.publish(cusp);
 
-    visualization_msgs::Marker arrow;
-    arrow.header = points.header; arrow.ns = ns; arrow.id = 2;
-    arrow.type = visualization_msgs::Marker::ARROW;
-    arrow.action = visualization_msgs::Marker::ADD;
-    arrow.pose.position.x = reference.x;
-    arrow.pose.position.y = reference.y;
-    arrow.pose.position.z = 0.08;
-    arrow.pose.orientation = tf::createQuaternionMsgFromYaw(reference.yaw);
-    arrow.scale.x = 0.12; arrow.scale.y = 0.025; arrow.scale.z = 0.04;
-    arrow.color.b = arrow.color.a = 1.0; arrow.color.g = 0.45;
-    publisher_.publish(arrow);
+    visualization_msgs::Marker extension_line;
+    extension_line.header = cusp.header; extension_line.ns = ns;
+    extension_line.id = 5;
+    extension_line.type = visualization_msgs::Marker::LINE_STRIP;
+    extension_line.pose.orientation.w = 1.0; extension_line.scale.x = 0.012;
+    extension_line.color.r = 1.0; extension_line.color.g = 0.22;
+    extension_line.color.b = 0.02; extension_line.color.a = 0.95;
+    extension_line.action = virtual_lookahead
+        ? visualization_msgs::Marker::ADD : visualization_msgs::Marker::DELETE;
+    if (virtual_lookahead) {
+      p.x = segment_end.x; p.y = segment_end.y; p.z = 0.04;
+      extension_line.points.push_back(p);
+      p.x = lookahead_x; p.y = lookahead_y;
+      extension_line.points.push_back(p);
+    }
+    publisher_.publish(extension_line);
 
     visualization_msgs::Marker text;
-    text.header = points.header; text.ns = ns; text.id = 3;
+    text.header = cusp.header; text.ns = ns; text.id = 6;
     text.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
     text.action = visualization_msgs::Marker::ADD;
     text.pose.orientation.w = 1.0;
@@ -127,6 +169,22 @@ class TrackingVisualization {
           << std::setprecision(2) << actual_s << " t=" << reference_time;
     text.text = label.str();
     publisher_.publish(text);
+
+    visualization_msgs::Marker virtual_text = text;
+    virtual_text.id = 7;
+    virtual_text.action = virtual_lookahead
+        ? visualization_msgs::Marker::ADD : visualization_msgs::Marker::DELETE;
+    virtual_text.pose.position.x = lookahead_x;
+    virtual_text.pose.position.y = lookahead_y;
+    virtual_text.pose.position.z = 0.16;
+    virtual_text.color.r = 1.0; virtual_text.color.g = 0.35;
+    virtual_text.color.b = 0.05;
+    std::ostringstream virtual_label;
+    virtual_label << "VIRTUAL LOOKAHEAD\nseg=" << segment << " "
+                  << GearName(gear) << " ext=" << std::fixed
+                  << std::setprecision(3) << virtual_extension << "m";
+    virtual_text.text = virtual_label.str();
+    publisher_.publish(virtual_text);
   }
  private:
   ros::NodeHandle node_;
@@ -213,6 +271,14 @@ class TrackingController {
     max_deceleration_ = node_.param("tracking_max_deceleration", 0.25);
     max_steering_rate_ = node_.param("tracking_max_steering_rate", 0.45);
     minimum_effective_speed_ = node_.param("minimum_effective_speed", 0.03);
+    coordination_enabled_ = node_.param(
+        "lateral_speed_coordination_enabled", true);
+    coordination_lateral_scale_ = node_.param(
+        "lateral_speed_error_scale", 0.02);
+    coordination_yaw_scale_ = node_.param(
+        "heading_speed_error_scale", 0.17453);
+    coordination_deadzone_timeout_ = node_.param(
+        "coordination_deadzone_timeout", 2.0);
     max_lateral_error_ = node_.param("max_lateral_error", 0.25);
     max_yaw_error_ = node_.param("max_yaw_error", 1.05);
     max_projection_distance_ = node_.param("max_projection_distance", 0.30);
@@ -221,6 +287,17 @@ class TrackingController {
     stagnation_distance_ = node_.param("progress_stagnation_distance", 0.01);
     timeout_scale_ = node_.param("tracking_timeout_scale", 2.0);
     timeout_margin_ = node_.param("tracking_timeout_margin", 15.0);
+    cusp_steering_prepare_enabled_ = node_.param(
+        "cusp_steering_prepare_enabled", false);
+    zero_speed_steering_supported_ = node_.param(
+        "chassis_zero_speed_steering_supported", false);
+    cusp_steering_prepare_duration_ = node_.param(
+        "cusp_steering_prepare_duration", 0.8);
+    if (cusp_steering_prepare_enabled_ &&
+        !zero_speed_steering_supported_) {
+      ROS_WARN("[PP] cusp steering preparation requested but disabled because "
+               "zero-speed steering support is not confirmed");
+    }
   }
 
   void BindTarget(int target) {
@@ -255,9 +332,17 @@ class TrackingController {
     integral_error_ = 0.0;
     last_command_ = 0.0;
     last_steering_ = 0.0;
+    desired_steering_ = limited_steering_ = 0.0;
     stable_cycles_ = 0;
     direction_conflict_cycles_ = 0;
     motion_heading_valid_ = false;
+    coordination_gamma_ = 1.0;
+    coordination_block_since_ = ros::Time();
+    using_virtual_lookahead_ = false;
+    virtual_lookahead_extension_ = 0.0;
+    speed_before_coordination_ = speed_after_coordination_ = 0.0;
+    desired_steering_ = limited_steering_ = 0.0;
+    segment_switch_hold_ = false;
   }
   void PublishZero() {
     sandbox_msgs::ChassisCommand command;
@@ -265,6 +350,9 @@ class TrackingController {
     command_publisher_.publish(command);
     last_command_ = 0.0;
     last_steering_ = 0.0;
+    using_virtual_lookahead_ = false;
+    virtual_lookahead_extension_ = 0.0;
+    visualization_.ClearVirtual();
   }
   void PublishNormalStop(double dt) {
     sandbox_msgs::ChassisCommand command;
@@ -466,6 +554,17 @@ class TrackingController {
     lateral_error_ = -std::sin(projected.yaw) * dx +
                      std::cos(projected.yaw) * dy;
     yaw_error_ = pure_pursuit::NormalizeAngle(object_.yaw - projected.yaw);
+    if (coordination_enabled_) {
+      const double y_ratio = lateral_error_ /
+          std::max(1e-6, coordination_lateral_scale_);
+      const double yaw_ratio = yaw_error_ /
+          std::max(1e-6, coordination_yaw_scale_);
+      const double gamma_y = 1.0 / (1.0 + y_ratio * y_ratio);
+      const double gamma_yaw = 1.0 / (1.0 + yaw_ratio * yaw_ratio);
+      coordination_gamma_ = std::min(gamma_y, gamma_yaw);
+    } else {
+      coordination_gamma_ = 1.0;
+    }
     if (std::abs(lateral_error_) > max_lateral_error_) {
       Fail("lateral error exceeds safety limit"); return false;
     }
@@ -496,6 +595,20 @@ class TrackingController {
   }
 
   bool UpdatePhase() {
+    if (phase_ == Phase::kCuspSteeringPrepare) {
+      if ((ros::Time::now() - phase_start_).toSec() >=
+          cusp_steering_prepare_duration_) {
+        phase_ = Phase::kFollowing;
+        phase_start_ = last_progress_time_ = ros::Time::now();
+        last_progress_s_ = actual_s_;
+        integral_error_ = 0.0;
+        coordination_block_since_ = ros::Time();
+        Event("zero-speed steering preparation elapsed; starting segment=" +
+              std::to_string(segment_index_));
+        return true;
+      }
+      return false;
+    }
     const auto& segment = path_.segment(segment_index_);
     const auto endpoint = path_.points()[segment.point_end];
     const double remaining = std::max(0.0, segment.s_end - actual_s_);
@@ -551,13 +664,27 @@ class TrackingController {
           const auto& next = path_.segment(segment_index_);
           actual_s_ = high_water_s_ = next.s_begin;
           reference_time_ = next.time_begin;
-          phase_ = Phase::kFollowing;
+          const bool prepare_steering = cusp_steering_prepare_enabled_ &&
+                                        zero_speed_steering_supported_;
+          phase_ = prepare_steering ? Phase::kCuspSteeringPrepare
+                                    : Phase::kFollowing;
           phase_start_ = last_progress_time_ = ros::Time::now();
           last_progress_s_ = actual_s_;
-          ResetControl();
+          // Reset longitudinal state but retain the real previous steering
+          // command so the rate limiter bridges the gear change continuously.
+          integral_error_ = 0.0;
+          last_command_ = 0.0;
+          stable_cycles_ = 0;
+          direction_conflict_cycles_ = 0;
+          motion_heading_valid_ = false;
+          coordination_block_since_ = ros::Time();
+          segment_switch_hold_ = !prepare_steering;
           PublishStatus(sandbox_msgs::TrackingStatus::SEGMENT_CHANGED,
                         "confirmed stop; activated segment " +
-                        std::to_string(segment_index_));
+                        std::to_string(segment_index_) +
+                        (prepare_steering
+                             ? "; time-based zero-speed steering preparation"
+                             : "; steering preparation disabled"));
           ROS_WARN("[PP] Vehicle%d segment=%d gear=%s after confirmed stop",
                    tracking_object_, segment_index_, GearName(next.gear));
         }
@@ -626,8 +753,9 @@ class TrackingController {
     const double projected_time = path_.SampleAtS(actual_s_, segment_index_).time;
     const double upper = std::min(segment.time_end,
                                   projected_time + reference_lead_);
-    reference_time_ = std::max(reference_time_,
-                               std::min(reference_time_ + dt, upper));
+    const double coordinated_dt = dt * coordination_gamma_;
+    reference_time_ = std::max(
+        reference_time_, std::min(reference_time_ + coordinated_dt, upper));
     reference_time_ = Clamp(reference_time_, segment.time_begin, segment.time_end);
     return path_.SampleAtTime(reference_time_, segment_index_);
   }
@@ -640,13 +768,26 @@ class TrackingController {
     const double target_s = std::min(segment.s_end, actual_s_ + lookahead_distance_);
     const auto target = path_.SampleAtS(target_s, segment_index_);
     *x = target.x; *y = target.y;
+    using_virtual_lookahead_ = false;
+    virtual_lookahead_extension_ = 0.0;
     if (target_s >= segment.s_end - 1e-8 &&
         segment.s_end - actual_s_ < lookahead_distance_) {
       const double extension = std::min(
           terminal_extension_, lookahead_distance_ - (segment.s_end - actual_s_));
       const double motion_yaw = target.yaw + (segment.gear < 0 ? M_PI : 0.0);
-      *x += extension * std::cos(motion_yaw);
-      *y += extension * std::sin(motion_yaw);
+      const double candidate_x = target.x + extension * std::cos(motion_yaw);
+      const double candidate_y = target.y + extension * std::sin(motion_yaw);
+      const double forward_dot =
+          (candidate_x - object_.x) * std::cos(motion_yaw) +
+          (candidate_y - object_.y) * std::sin(motion_yaw);
+      // The virtual point extends only the active segment and must remain in
+      // front of the vehicle in that segment's signed direction of travel.
+      if (extension > 1e-6 && forward_dot > 1e-6) {
+        *x = candidate_x;
+        *y = candidate_y;
+        using_virtual_lookahead_ = true;
+        virtual_lookahead_extension_ = extension;
+      }
     }
   }
 
@@ -660,6 +801,7 @@ class TrackingController {
     double command = feedforward_gain_ * reference.velocity +
                      longitude_kp_ * longitudinal_error_ +
                      longitude_ki_ * integral_error_;
+    speed_before_coordination_ = command;
     const double low = Gear() > 0 ? 0.0 : -max_reverse_speed_;
     const double high = Gear() > 0 ? max_forward_speed_ : 0.0;
     const double saturated = Clamp(command, low, high);
@@ -678,13 +820,27 @@ class TrackingController {
     if (phase_ == Phase::kFinalApproach)
       command = Clamp(command, Gear() > 0 ? 0.0 : -terminal_speed_,
                       Gear() > 0 ? terminal_speed_ : 0.0);
+    const double directional_max = Gear() > 0
+        ? max_forward_speed_ : max_reverse_speed_;
+    const double coordinated_limit = directional_max * coordination_gamma_;
+    const double coordinated = Clamp(
+        command, Gear() > 0 ? 0.0 : -coordinated_limit,
+        Gear() > 0 ? coordinated_limit : 0.0);
+    if (coordinated != command && command * longitudinal_error_ > 0.0)
+      integral_error_ = old_integral;
+    command = coordinated;
     if (remaining > cusp_position_tolerance_ && std::abs(command) > 1e-6 &&
-        std::abs(command) < minimum_effective_speed_)
-      command = Gear() * minimum_effective_speed_;
+        std::abs(command) < minimum_effective_speed_) {
+      // Never let low-speed quantization override the safety coordination cap.
+      command = coordinated_limit >= minimum_effective_speed_
+          ? Gear() * minimum_effective_speed_ : 0.0;
+    }
+    speed_after_coordination_ = command;
     const double change = (std::abs(command) > std::abs(last_command_)
                                ? max_acceleration_ : max_deceleration_) * dt;
     return Clamp(Clamp(command, last_command_ - change, last_command_ + change),
-                 low, high);
+                 Gear() > 0 ? 0.0 : -coordinated_limit,
+                 Gear() > 0 ? coordinated_limit : 0.0);
   }
 
   double Steering(double x, double y) const {
@@ -758,21 +914,90 @@ class TrackingController {
     if (!UpdatePhase()) {
       if (phase_ == Phase::kCompleted || phase_ == Phase::kFailed)
         PublishZero();
-      else
+      else if (phase_ == Phase::kCuspSteeringPrepare) {
+        const auto prepare_projection =
+            path_.SampleAtS(actual_s_, segment_index_);
+        double lookahead_x = 0.0, lookahead_y = 0.0;
+        Lookahead(prepare_projection, &lookahead_x, &lookahead_y);
+        desired_steering_ = Steering(lookahead_x, lookahead_y);
+        limited_steering_ = Clamp(
+            desired_steering_, last_steering_ - max_steering_rate_ * dt,
+            last_steering_ + max_steering_rate_ * dt);
+        sandbox_msgs::ChassisCommand command;
+        command.target = tracking_object_;
+        command.throttle = 0.0;
+        command.steering = limited_steering_;
+        command_publisher_.publish(command);
+        last_command_ = 0.0;
+        last_steering_ = limited_steering_;
+        speed_before_coordination_ = speed_after_coordination_ = 0.0;
+        DrawAndLog(prepare_projection, prepare_projection, 0.0,
+                   limited_steering_, lookahead_x, lookahead_y,
+                   "time_based_steering_preparation_no_angle_feedback");
+        return;
+      } else if (segment_switch_hold_) {
+        sandbox_msgs::ChassisCommand command;
+        command.target = tracking_object_;
+        command.throttle = 0.0;
+        command.steering = last_steering_;
+        command_publisher_.publish(command);
+        last_command_ = 0.0;
+        segment_switch_hold_ = false;
+        desired_steering_ = limited_steering_ = last_steering_;
+      } else {
         PublishNormalStop(dt);
+        desired_steering_ = 0.0;
+      }
+      using_virtual_lookahead_ = false;
+      virtual_lookahead_extension_ = 0.0;
+      speed_before_coordination_ = speed_after_coordination_ = 0.0;
+      limited_steering_ = last_steering_;
       const auto reference = path_.SampleAtS(actual_s_, segment_index_);
-      DrawAndLog(projected, reference, 0.0, 0.0, reference.x, reference.y, "");
+      DrawAndLog(projected, reference, 0.0, last_steering_,
+                 reference.x, reference.y, "");
       return;
     }
+    const double coordinated_limit =
+        (Gear() > 0 ? max_forward_speed_ : max_reverse_speed_) *
+        coordination_gamma_;
+    if (coordination_enabled_ &&
+        coordinated_limit < minimum_effective_speed_) {
+      if (coordination_block_since_.isZero())
+        coordination_block_since_ = ros::Time::now();
+      integral_error_ = 0.0;
+      speed_before_coordination_ = speed_after_coordination_ = 0.0;
+      if ((ros::Time::now() - coordination_block_since_).toSec() >
+          coordination_deadzone_timeout_) {
+        Fail("lateral/heading coordination speed limit remained below "
+             "executable deadzone");
+        return;
+      }
+      sandbox_msgs::ChassisCommand command;
+      command.target = tracking_object_;
+      command.throttle = 0.0;
+      command.steering = last_steering_;
+      command_publisher_.publish(command);
+      last_command_ = 0.0;
+      using_virtual_lookahead_ = false;
+      virtual_lookahead_extension_ = 0.0;
+      const auto held_reference =
+          path_.SampleAtTime(reference_time_, segment_index_);
+      DrawAndLog(projected, held_reference, 0.0, last_steering_,
+                 held_reference.x, held_reference.y,
+                 "coordination_below_executable_deadzone");
+      return;
+    }
+    coordination_block_since_ = ros::Time();
     const auto reference = Reference(dt);
     double lookahead_x = 0.0, lookahead_y = 0.0;
     Lookahead(reference, &lookahead_x, &lookahead_y);
     const double throttle = Longitudinal(reference, dt);
-    const double desired_steering = Steering(lookahead_x, lookahead_y);
+    desired_steering_ = Steering(lookahead_x, lookahead_y);
     const double steering = Clamp(
-        desired_steering,
+        desired_steering_,
         last_steering_ - max_steering_rate_ * dt,
         last_steering_ + max_steering_rate_ * dt);
+    limited_steering_ = steering;
     if (!ProgressAndTimeout(throttle)) return;
     sandbox_msgs::ChassisCommand command;
     command.target = tracking_object_;
@@ -792,7 +1017,9 @@ class TrackingController {
     const auto endpoint = path_.points()[path_.segment(segment_index_).point_end];
     visualization_.Draw(projected, reference, lookahead_x, lookahead_y,
                         endpoint, PhaseName(phase_), segment_index_, Gear(),
-                        actual_s_, reference_time_);
+                        actual_s_, reference_time_, object_.x, object_.y,
+                        using_virtual_lookahead_,
+                        virtual_lookahead_extension_);
     Log(reference, throttle, steering, lookahead_x, lookahead_y, reason);
   }
 
@@ -811,7 +1038,10 @@ class TrackingController {
                        "reference_time,actual_x,actual_y,actual_yaw,actual_velocity,"
                        "ref_x,ref_y,ref_yaw,ref_velocity,lookahead_x,lookahead_y,"
                        "longitudinal_error,lateral_error,yaw_error,projection_distance,"
-                       "minimum_obstacle_distance,throttle,steering,failure_reason\n";
+                       "minimum_obstacle_distance,using_virtual_lookahead,"
+                       "dynamic_speed_limit_factor,speed_before_coordination,"
+                       "speed_after_coordination,desired_steering,limited_steering,"
+                       "steering_preparation,throttle,steering,failure_reason\n";
     std::ofstream parameters(result_directory_ +
                              "/effective_controller_parameters.yaml");
     if (parameters)
@@ -821,6 +1051,20 @@ class TrackingController {
                  << "longitude_ki: " << longitude_ki_ << '\n'
                  << "velocity_feedforward_gain: " << feedforward_gain_ << '\n'
                  << "lookahead_scale: " << lookahead_scale_ << '\n'
+                 << "lateral_speed_coordination_enabled: "
+                 << coordination_enabled_ << '\n'
+                 << "lateral_speed_error_scale: "
+                 << coordination_lateral_scale_ << '\n'
+                 << "heading_speed_error_scale: "
+                 << coordination_yaw_scale_ << '\n'
+                 << "coordination_deadzone_timeout: "
+                 << coordination_deadzone_timeout_ << '\n'
+                 << "cusp_steering_prepare_enabled: "
+                 << cusp_steering_prepare_enabled_ << '\n'
+                 << "chassis_zero_speed_steering_supported: "
+                 << zero_speed_steering_supported_ << '\n'
+                 << "cusp_steering_prepare_duration: "
+                 << cusp_steering_prepare_duration_ << '\n'
                  << "collision_stop_condition: footprint_overlap\n";
     ROS_WARN("[PP] task=%d Vehicle%d logs=%s", task_id_, tracking_object_,
              result_directory_.c_str());
@@ -853,6 +1097,11 @@ class TrackingController {
                   << lookahead_y << ',' << longitudinal_error_ << ','
                   << lateral_error_ << ',' << yaw_error_ << ','
                   << projection_distance_ << ',' << minimum_clearance_ << ','
+                  << (using_virtual_lookahead_ ? 1 : 0) << ','
+                  << coordination_gamma_ << ',' << speed_before_coordination_ << ','
+                  << speed_after_coordination_ << ',' << desired_steering_ << ','
+                  << limited_steering_ << ','
+                  << (phase_ == Phase::kCuspSteeringPrepare ? 1 : 0) << ','
                   << throttle << ',' << steering << ',' << reason << '\n';
     tracking_log_.flush();
   }
@@ -903,12 +1152,27 @@ class TrackingController {
   double max_reverse_speed_ = 0.21, max_acceleration_ = 0.15;
   double max_deceleration_ = 0.25, max_steering_rate_ = 0.45;
   double minimum_effective_speed_ = 0.03;
+  bool coordination_enabled_ = true;
+  double coordination_lateral_scale_ = 0.02;
+  double coordination_yaw_scale_ = 0.17453;
+  double coordination_deadzone_timeout_ = 2.0;
+  double coordination_gamma_ = 1.0;
+  ros::Time coordination_block_since_;
   double max_lateral_error_ = 0.25, max_yaw_error_ = 1.05;
   double max_projection_distance_ = 0.30;
   double obstacle_timeout_ = 0.50, stagnation_timeout_ = 4.0;
   double stagnation_distance_ = 0.01, timeout_scale_ = 2.0;
   double timeout_margin_ = 15.0;
+  bool cusp_steering_prepare_enabled_ = false;
+  bool zero_speed_steering_supported_ = false;
+  double cusp_steering_prepare_duration_ = 0.8;
+  bool segment_switch_hold_ = false;
   double longitudinal_error_ = 0.0, lateral_error_ = 0.0, yaw_error_ = 0.0;
+  double speed_before_coordination_ = 0.0;
+  double speed_after_coordination_ = 0.0;
+  double desired_steering_ = 0.0, limited_steering_ = 0.0;
+  bool using_virtual_lookahead_ = false;
+  double virtual_lookahead_extension_ = 0.0;
   double projection_distance_ = 0.0;
   double minimum_clearance_ = std::numeric_limits<double>::infinity();
   bool debug_log_enable_ = true;

@@ -6,9 +6,10 @@
 #include <fstream>
 #include <utility>
 
+#include "execution/trajectory_adapter.h"
+#include "optimizer/footprint_nlp.h"
 #include "planning/experiment_logger.h"
 #include "planning/hybrid_search_adapter.h"
-#include "optimizer/footprint_nlp.h"
 
 namespace planning_platform {
 namespace {
@@ -183,6 +184,26 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
                       result.optimization.status;
       if (!collision_report_written) {
         result.optimization.diagnostic_error = error;
+      }
+    } else {
+      result.optimization.independent_collision_validated = true;
+    }
+  }
+  if (result.success) {
+    std::string executable_error;
+    if (!execution::TrajectoryAdapter::Validate(
+            result.optimization.trajectory, &executable_error)) {
+      result.success = false;
+      result.optimization.success = false;
+      result.status = "Downstream trajectory executability validation failed "
+                      "after " + result.optimization.status + ": " +
+                      executable_error;
+      result.optimization.diagnostic_error = executable_error;
+    } else {
+      result.optimization.downstream_executable_validated = true;
+      if (result.optimization.feasible_fallback_used) {
+        result.status = "Validated feasible last iterate accepted after " +
+                        result.optimization.status;
       }
     }
   }

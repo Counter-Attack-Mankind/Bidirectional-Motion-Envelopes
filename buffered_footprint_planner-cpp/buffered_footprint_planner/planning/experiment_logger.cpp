@@ -263,6 +263,20 @@ bool ExperimentLogger::WriteSummary(
       << initial.max_bme_map_boundary_violation << '\n'
       << "nlp_solver_succeeded=" << nlp.solver_succeeded << '\n'
       << "nlp_validated_success=" << nlp.success << '\n'
+      << "nlp_solution_class=" << nlp.solution_class << '\n'
+      << "nlp_normal_solution_available="
+      << nlp.normal_solution_available << '\n'
+      << "nlp_normal_solution_validated="
+      << nlp.normal_solution_validated << '\n'
+      << "nlp_feasible_fallback_available="
+      << nlp.feasible_fallback_available << '\n'
+      << "nlp_feasible_fallback_validated="
+      << nlp.feasible_fallback_validated << '\n'
+      << "nlp_feasible_fallback_used=" << nlp.feasible_fallback_used << '\n'
+      << "nlp_independent_collision_validated="
+      << nlp.independent_collision_validated << '\n'
+      << "nlp_downstream_executable_validated="
+      << nlp.downstream_executable_validated << '\n'
       << "nlp_status=" << nlp.status << '\n'
       << "nlp_iterations=" << nlp.iterations << '\n'
       << "nlp_solve_time_s=" << nlp.solve_time << '\n'

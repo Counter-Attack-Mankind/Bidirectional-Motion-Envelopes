@@ -146,20 +146,21 @@ add_library(planning_config planning/planning_config_loader.cpp)
 target_link_libraries(planning_config hybrid_search_adapter footprint_optimizer
                       ${catkin_LIBRARIES})
 
+add_library(real_vehicle_execution execution/trajectory_adapter.cpp)
+target_link_libraries(real_vehicle_execution scene_core common_math
+                      ${catkin_LIBRARIES})
+
 add_library(planning_pipeline planning/planning_pipeline.cpp)
 target_link_libraries(planning_pipeline planning_config hybrid_search_adapter
                       hybrid_astar footprint_optimizer
-                      experiment_logging scene_core ${catkin_LIBRARIES})
+                      experiment_logging real_vehicle_execution scene_core
+                      ${catkin_LIBRARIES})
 
 add_library(experiment_runner planning/experiment_runner.cpp)
 target_link_libraries(experiment_runner planning_pipeline scene_core)
 
 add_library(experiment_manager execution/experiment_manager.cpp)
 target_link_libraries(experiment_manager scene_core common_math)
-
-add_library(real_vehicle_execution execution/trajectory_adapter.cpp)
-target_link_libraries(real_vehicle_execution experiment_manager scene_core common_math
-                      ${catkin_LIBRARIES})
 
 add_library(real_vehicle_logger execution/real_vehicle_logger.cpp)
 target_link_libraries(real_vehicle_logger scene_core ${catkin_LIBRARIES})

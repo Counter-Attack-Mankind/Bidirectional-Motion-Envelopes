@@ -23,6 +23,13 @@ longitude_ki: 0.10
 longitude_integral_limit: 0.15
 minimum_effective_speed: 0.03
 
+# Continuous lateral/longitudinal coordination. The speed floor is never
+# allowed to override this safety limit; a persistent sub-deadzone limit fails.
+lateral_speed_coordination_enabled: true
+lateral_speed_error_scale: 0.02
+heading_speed_error_scale: 0.17453
+coordination_deadzone_timeout: 2.0
+
 # Cusp state machine: approach -> brake -> confirmed stop -> next segment.
 cusp_approach_distance: 0.15
 cusp_position_tolerance: 0.035
@@ -30,6 +37,13 @@ cusp_yaw_tolerance: 0.12
 cusp_stop_speed: 0.02
 cusp_stop_cycles: 3
 cusp_timeout: 10.0
+
+# Enable only after confirming that the chassis can physically steer at zero
+# longitudinal speed. Without steering feedback, preparation is time based and
+# is never interpreted as proof that the wheels reached the command.
+cusp_steering_prepare_enabled: false
+chassis_zero_speed_steering_supported: false
+cusp_steering_prepare_duration: 0.8
 
 # Terminal convergence and chassis low-speed quantization handling.
 final_lon_tolerance: 0.02

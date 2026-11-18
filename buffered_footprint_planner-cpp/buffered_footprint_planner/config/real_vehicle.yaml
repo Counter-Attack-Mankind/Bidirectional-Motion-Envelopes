@@ -52,7 +52,7 @@ experiment:
   vehicle_stationary_position_threshold: 0.002
   vehicle_stationary_yaw_threshold: 0.0087266463
   obstacle_stationary_boundary_threshold: 0.002
-  # Frozen-scene thresholds are deliberately below optimizer dmin=0.010 m.
+  # Frozen-scene thresholds are deliberately below optimizer dmin=0.020 m.
   frozen_vehicle_position_threshold: 0.003
   frozen_vehicle_yaw_threshold: 0.0087266463
   frozen_obstacle_boundary_threshold: 0.003

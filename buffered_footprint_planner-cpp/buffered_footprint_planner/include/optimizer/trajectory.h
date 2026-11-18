@@ -99,6 +99,14 @@ struct OptimizationResult {
   bool initial_guess_succeeded = false;
   bool solver_succeeded = false;
   bool success = false;
+  bool normal_solution_available = false;
+  bool normal_solution_validated = false;
+  bool feasible_fallback_available = false;
+  bool feasible_fallback_validated = false;
+  bool feasible_fallback_used = false;
+  bool independent_collision_validated = false;
+  bool downstream_executable_validated = false;
+  std::string solution_class = "none";
   std::string status;
   bool solver_stats_available = false;
   bool solve_time_from_stats = false;

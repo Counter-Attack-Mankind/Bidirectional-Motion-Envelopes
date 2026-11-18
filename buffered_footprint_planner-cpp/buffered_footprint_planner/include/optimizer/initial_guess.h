@@ -20,7 +20,7 @@ struct InitialGuessConfig {
   double reverse_speed = 0.20;
   double max_acceleration = 0.10;
   double max_steering_rate = 0.30;
-  double dmin = 0.015;
+  double dmin = 0.020;
   double total_time_limit = 35.0;
 };
 

@@ -15,6 +15,8 @@ bool NormalizeIntervalGears(const optimizer::Trajectory& trajectory,
   gears->clear();
   gears->reserve(trajectory.intervals.size());
   std::vector<bool> stationary(trajectory.intervals.size(), false);
+  std::vector<double> interval_distances;
+  interval_distances.reserve(trajectory.intervals.size());
   for (std::size_t i = 0; i < trajectory.intervals.size(); ++i) {
     const auto& first = trajectory.nodes[i];
     const auto& second = trajectory.nodes[i + 1];
@@ -44,6 +46,7 @@ bool NormalizeIntervalGears(const optimizer::Trajectory& trajectory,
     stationary[i] = distance <= kMotionEpsilon &&
                     std::abs(first.v) <= kVelocityEvidence;
     gears->push_back(gear);
+    interval_distances.push_back(distance);
   }
   for (std::size_t i = 0; i < gears->size(); ++i) {
     if (!stationary[i]) continue;
@@ -56,6 +59,21 @@ bool NormalizeIntervalGears(const optimizer::Trajectory& trajectory,
     } else if (next < gears->size()) {
       (*gears)[i] = (*gears)[next];
     }
+  }
+  double segment_distance = 0.0;
+  for (std::size_t i = 0; i < gears->size(); ++i) {
+    if (i > 0 && (*gears)[i] != (*gears)[i - 1]) {
+      if (segment_distance < kMotionEpsilon) {
+        if (error) *error = "trajectory contains a zero-length motion segment";
+        return false;
+      }
+      segment_distance = 0.0;
+    }
+    segment_distance += interval_distances[i];
+  }
+  if (segment_distance < kMotionEpsilon) {
+    if (error) *error = "trajectory contains no executable motion";
+    return false;
   }
   return true;
 }
