@@ -162,13 +162,15 @@ bool TrackingPath::Build(std::vector<TrackingPoint> points,
     // optimized interval gear. Node i+1 may cross zero before the next
     // interval and must never reclassify interval i.
     interval_gears_[i] = original_gear;
+    // Forward Euler drives interval i with node i. The end-node velocity is
+    // evidence for the next interval, not for motion in this zero-displacement
+    // interval.
     stationary_intervals[i] =
         ds <= kMotionEpsilon &&
-        std::abs(points[i].velocity) <= kVelocityEvidence &&
-        std::abs(points[i + 1].velocity) <= kVelocityEvidence;
+        std::abs(points[i].velocity) <= kVelocityEvidence;
   }
 
-  // Preserve dwell time, but attach zero-motion/zero-speed intervals to a
+  // Preserve dwell time, but attach zero-motion/Euler-stationary intervals to a
   // neighboring real motion segment. At a cusp they remain with the incoming
   // segment, so the actual gear switch occurs at the next moving interval.
   for (std::size_t i = 0; i < interval_gears_.size(); ++i) {

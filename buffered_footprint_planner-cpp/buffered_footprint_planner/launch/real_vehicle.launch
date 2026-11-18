@@ -1,7 +1,7 @@
 <launch>
   <arg name="server" default="10.1.1.198"/>
   <arg name="port" default="3883"/>
-  <arg name="enable_execution" default="false"/>
+  <arg name="enable_execution" default="true"/>
   <arg name="launch_rviz" default="true"/>
   <arg name="launch_vrpn" default="true"/>
   <arg name="launch_chassis" default="true"/>

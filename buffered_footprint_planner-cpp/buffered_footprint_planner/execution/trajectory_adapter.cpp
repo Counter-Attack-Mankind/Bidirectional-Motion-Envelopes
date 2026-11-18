@@ -38,9 +38,11 @@ bool NormalizeIntervalGears(const optimizer::Trajectory& trajectory,
                           " velocity sign conflicts with gear";
       return false;
     }
+    // Forward Euler drives interval i with node i. A non-zero velocity at
+    // node i+1 therefore belongs to the following interval and must not turn
+    // a geometrically stationary interval into a spurious motion segment.
     stationary[i] = distance <= kMotionEpsilon &&
-                    std::abs(first.v) <= kVelocityEvidence &&
-                    std::abs(second.v) <= kVelocityEvidence;
+                    std::abs(first.v) <= kVelocityEvidence;
     gears->push_back(gear);
   }
   for (std::size_t i = 0; i < gears->size(); ++i) {
