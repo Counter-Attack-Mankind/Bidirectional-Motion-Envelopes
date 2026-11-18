@@ -194,6 +194,7 @@ add_dependencies(experiment_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EX
 add_executable(real_vehicle_node src/real_vehicle_node.cpp)
 target_link_libraries(real_vehicle_node mocap_scene_provider
                       real_vehicle_execution planning_pipeline scene_core
+                      experiment_manager
                       real_vehicle_logger
                       paper_data_exporter
                       scene_visualizer trajectory_playback_visualizer
