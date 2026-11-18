@@ -33,7 +33,7 @@ coordination_deadzone_timeout: 2.0
 # Cusp state machine: approach -> brake -> confirmed stop -> next segment.
 cusp_approach_distance: 0.15
 cusp_position_tolerance: 0.035
-cusp_yaw_tolerance: 0.12
+cusp_yaw_tolerance: 0.21
 cusp_stop_speed: 0.02
 cusp_stop_cycles: 3
 cusp_timeout: 10.0
