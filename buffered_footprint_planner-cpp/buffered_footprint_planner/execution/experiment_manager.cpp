@@ -101,13 +101,10 @@ void ExperimentManager::Observe(const scene::SceneSnapshot& snapshot,
     return;
   }
   if (state_ == State::kTracking) {
-    // Vehicle motion is expected while tracking. Only the frozen obstacle set
-    // (or data validity handled above) can invalidate an executing task.
-    if (ObstaclesMoved(snapshot, frozen_,
-                       configuration_.frozen_obstacle_boundary_threshold)) {
-      frozen_scene_valid_ = false;
-      EnterFailedLocked("obstacle_moved_during_tracking");
-    }
+    // Do not compare the live obstacle boundary against the frozen planning
+    // scene here. Tracking safety remains enforced by the controller's fresh
+    // obstacle observations and actual footprint collision checks, while
+    // mocap invalidity above still enters FAILED_LOCKED.
     return;
   }
   if (state_ == State::kCompleted) {

@@ -51,7 +51,17 @@ class RealVehicleNode {
     const std::uint64_t last_task_id =
         execution::FindMaximumTaskId(configuration_.results_root);
     manager_.InitializeTaskSequence(last_task_id);
-    ROS_INFO("Real-vehicle task sequence resumes after task%llu",
+    if (!execution::CreateRealVehicleSession(
+            configuration_.results_root, &session_id_, &session_directory_,
+            &error)) {
+      ROS_ERROR("Cannot create real-vehicle experiment session: %s",
+                error.c_str());
+      return false;
+    }
+    ROS_INFO("Real-vehicle session stage%llu created at %s; ROS task sequence "
+             "resumes after task%llu",
+             static_cast<unsigned long long>(session_id_),
+             session_directory_.c_str(),
              static_cast<unsigned long long>(last_task_id));
     private_node_.param("enable_execution", execution_enabled_, false);
     private_node_.param("visualization/show_hybrid_search",
@@ -152,6 +162,14 @@ class RealVehicleNode {
     return have_last_valid_pose_ ? &last_valid_pose_ : nullptr;
   }
 
+  std::string ExperimentLabel() const {
+    return "stage" + std::to_string(session_id_) +
+           (session_task_id_ > 0
+                ? "/task" + std::to_string(session_task_id_)
+                : std::string()) +
+           " (ROS task " + std::to_string(manager_.task_id()) + ")";
+  }
+
   void PublishSafetyHold() {
     PublishEstop(true, true);
     if (!safety_command_publisher_) return;
@@ -217,6 +235,8 @@ class RealVehicleNode {
                          std::ios::app);
     if (events)
       events << ros::Time::now().toSec() << " task=" << manager_.task_id()
+             << " session_id=" << session_id_
+             << " session_task_id=" << session_task_id_
              << " vehicle=" << planned_vehicle_id_ << " " << event << '\n';
     if (!summary_key.empty()) {
       std::ofstream summary(active_result_directory_ + "/summary.txt",
@@ -244,24 +264,26 @@ class RealVehicleNode {
     if (message->status == sandbox_msgs::TrackingStatus::STARTED) {
       AppendTaskRecord("tracking started: " + message->reason,
                        "tracking_start_status", "started");
-      ROS_WARN("Task %u Vehicle%d tracking started: %s", message->task_id,
-               message->vehicle_id, message->reason.c_str());
+      ROS_WARN("%s Vehicle%d tracking started: %s",
+               ExperimentLabel().c_str(), message->vehicle_id,
+               message->reason.c_str());
     } else if (message->status == sandbox_msgs::TrackingStatus::VALIDATED) {
       AppendTaskRecord("trajectory validation succeeded: " + message->reason,
                        "trajectory_validation_status", "passed");
-      ROS_INFO("Task %u Vehicle%d trajectory validated: %s", message->task_id,
-               message->vehicle_id, message->reason.c_str());
+      ROS_INFO("%s Vehicle%d trajectory validated: %s",
+               ExperimentLabel().c_str(), message->vehicle_id,
+               message->reason.c_str());
     } else if (message->status ==
                sandbox_msgs::TrackingStatus::SEGMENT_CHANGED) {
       AppendTaskRecord("tracking segment changed: " + message->reason);
-      ROS_INFO("Task %u Vehicle%d %s", message->task_id,
+      ROS_INFO("%s Vehicle%d %s", ExperimentLabel().c_str(),
                message->vehicle_id, message->reason.c_str());
     } else if (message->status == sandbox_msgs::TrackingStatus::FAILED) {
       manager_.TrackingFailed("tracking_failed:" + message->reason);
       planning_cancel_requested_ = true;
       FinishActiveTask("tracking_failed", message->reason, false);
-      ROS_ERROR("Task %u Vehicle%d tracking failed; stopped: %s",
-                message->task_id, message->vehicle_id,
+      ROS_ERROR("%s Vehicle%d tracking failed; stopped: %s",
+                ExperimentLabel().c_str(), message->vehicle_id,
                 message->reason.c_str());
     } else if (message->status == sandbox_msgs::TrackingStatus::REACHED) {
       if (!have_last_valid_pose_) {
@@ -270,7 +292,7 @@ class RealVehicleNode {
       }
       manager_.Reached(last_valid_pose_);
       FinishActiveTask("reached", message->reason, true);
-      ROS_INFO("Task %u Vehicle%d completed: %s", message->task_id,
+      ROS_INFO("%s Vehicle%d completed: %s", ExperimentLabel().c_str(),
                message->vehicle_id, message->reason.c_str());
     }
   }
@@ -328,12 +350,22 @@ class RealVehicleNode {
     scene::SceneSnapshot frozen;
     std::uint64_t generation = 0;
     if (!manager_.BeginPlanning(&frozen, &generation)) return;
+    std::string allocation_error;
+    if (!execution::RecordAllocatedTaskId(
+            configuration_.results_root, manager_.task_id(),
+            &allocation_error)) {
+      manager_.ForceSafeWait("cannot_persist_ros_task_id:" + allocation_error);
+      PublishSafetyHold();
+      ROS_ERROR("Cannot persist ROS task id: %s", allocation_error.c_str());
+      return;
+    }
     if (planning_thread_.joinable()) planning_thread_.join();
     planning_active_ = true;
     planning_cancel_requested_ = false;
     task_finalized_ = false;
     trajectory_published_ = false;
     active_result_directory_.clear();
+    ++session_task_id_;
     active_generation_ = generation;
     planned_vehicle_id_ = active_vehicle_id_;
     planned_scene_ = frozen;
@@ -343,7 +375,11 @@ class RealVehicleNode {
     visualizer_.ClearPlanningResults();
     PublishEstop(true);
     const int vehicle_id = planned_vehicle_id_;
-    planning_thread_ = std::thread([this, frozen, generation, vehicle_id]() {
+    const std::uint64_t session_id = session_id_;
+    const std::uint64_t session_task_id = session_task_id_;
+    planning_thread_ = std::thread(
+        [this, frozen, generation, vehicle_id, session_id,
+         session_task_id]() {
       planning_platform::PlanningPipeline pipeline(configuration_);
       auto result = std::make_shared<planning_platform::PlanningRunResult>(
           pipeline.Run(
@@ -374,15 +410,17 @@ class RealVehicleNode {
                 pending_stage_ = std::make_shared<
                     planning_platform::PlanningStageUpdate>(std::move(update));
                 pending_stage_generation_ = generation;
-              }));
+              }, session_id, session_task_id));
       std::lock_guard<std::mutex> lock(result_mutex_);
       completed_result_ = std::move(result);
       completed_generation_ = generation;
       completed_vehicle_id_ = vehicle_id;
       planning_active_ = false;
     });
-    ROS_INFO("Started real-scene planning task %d (generation %llu)",
-             frozen.task_id, static_cast<unsigned long long>(generation));
+    ROS_INFO("Started stage%llu/task%llu with ROS task %d (generation %llu)",
+             static_cast<unsigned long long>(session_id_),
+             static_cast<unsigned long long>(session_task_id_), frozen.task_id,
+             static_cast<unsigned long long>(generation));
   }
 
   void ProcessPlanningEvents() {
@@ -413,12 +451,17 @@ class RealVehicleNode {
     if (hybrid && hybrid_generation == active)
       visualizer_.QueueHybridPath(*hybrid);
     if (stage && stage_generation == active) {
-      ROS_INFO("Task %llu Vehicle%d planning stage=%d state=%d: %s",
+      ROS_INFO("stage%llu/task%llu ROS task %llu Vehicle%d planning stage=%d "
+               "state=%d: %s",
+               static_cast<unsigned long long>(session_id_),
+               static_cast<unsigned long long>(session_task_id_),
                static_cast<unsigned long long>(active), planned_vehicle_id_,
                static_cast<int>(stage->stage), static_cast<int>(stage->state),
                stage->message.c_str());
       visualizer_.QueuePlanningStage(
-          latest_scene_.bounds, stage->message + " (" +
+          latest_scene_.bounds,
+          "stage" + std::to_string(session_id_) + "/task" +
+          std::to_string(session_task_id_) + " | " + stage->message + " (" +
           std::to_string(stage->total_elapsed) + " s)");
     }
     if ((progress && progress_generation == active) ||
@@ -488,8 +531,9 @@ class RealVehicleNode {
           ROS_ERROR("Cannot start pure-planning playback: %s",
                     playback_error.c_str());
       }
-      ROS_INFO("Planning task finished (%s); result=%s, execution=%s, dir=%s",
-               usable ? "usable" : "rejected", result->status.c_str(),
+      ROS_INFO("%s planning finished (%s); result=%s, execution=%s, dir=%s",
+               ExperimentLabel().c_str(), usable ? "usable" : "rejected",
+               result->status.c_str(),
                execution_enabled_ ? "authorized" : "disabled",
                result->result_directory.c_str());
       return;
@@ -524,8 +568,8 @@ class RealVehicleNode {
       ROS_ERROR("Real-vehicle logging disabled for this task: %s",
                 error.c_str());
     PublishEstop(false);
-    ROS_WARN("Published task %u once to /traj for vehicle %d; vehicle motion is enabled",
-             trajectory.task_id, active_vehicle_id_);
+    ROS_WARN("%s published once to /traj for vehicle %d; vehicle motion is enabled",
+             ExperimentLabel().c_str(), active_vehicle_id_);
   }
 
   void Tick(const ros::TimerEvent&) {
@@ -552,7 +596,12 @@ class RealVehicleNode {
           snapshot.start, "Vehicle" + std::to_string(status.vehicle_id));
     visualizer_.QueueGoal(snapshot.goal);
     visualizer_.QueuePlanningStage(
-        snapshot.bounds, ready ? manager_.StateName() : status.message);
+        snapshot.bounds,
+        "stage" + std::to_string(session_id_) +
+        (session_task_id_ > 0
+             ? "/task" + std::to_string(session_task_id_) : std::string()) +
+        " | ROS task " + std::to_string(manager_.task_id()) + " | " +
+        (ready ? manager_.StateName() : status.message));
     visualizer_.Trigger();
 
     if (current_state ==
@@ -611,6 +660,9 @@ class RealVehicleNode {
   std::uint64_t completed_generation_ = 0;
   int completed_vehicle_id_ = -1;
   int planned_vehicle_id_ = -1;
+  std::uint64_t session_id_ = 0;
+  std::uint64_t session_task_id_ = 0;
+  std::string session_directory_;
   std::string active_result_directory_;
   std::atomic<std::uint64_t> active_generation_{0};
   std::atomic<bool> planning_active_{false};

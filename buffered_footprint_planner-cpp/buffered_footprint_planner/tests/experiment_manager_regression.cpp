@@ -53,9 +53,9 @@ int main() {
   assert(tracking_manager.frozen_scene_valid());
   scene.obstacles[0].x += 0.02;
   tracking_manager.Observe(scene, true, 3, 3.3);
-  assert(!tracking_manager.frozen_scene_valid());
+  assert(tracking_manager.frozen_scene_valid());
   assert(tracking_manager.state() ==
-         execution::ExperimentManager::State::kFailedLocked);
+         execution::ExperimentManager::State::kTracking);
 
   execution::ExperimentManager controller_failure(config);
   scene = MakeScene();

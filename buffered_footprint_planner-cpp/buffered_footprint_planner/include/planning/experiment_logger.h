@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "planning/hybrid_astar/hybrid_a_star.h"
@@ -17,7 +18,8 @@ class ExperimentLogger {
  public:
   bool CreateRunDirectory(const std::string& root, const std::string& mode,
                           int task_id, std::string* directory,
-                          std::string* error) const;
+                          std::string* error, std::uint64_t session_id = 0,
+                          std::uint64_t session_task_id = 0) const;
   bool WriteSceneCopy(const std::string& directory,
                       const scene::SceneSnapshot& snapshot,
                       std::string* error) const;

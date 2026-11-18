@@ -23,7 +23,9 @@ bool ExperimentLogger::CreateRunDirectory(const std::string& root,
                                           const std::string& mode,
                                           int task_id,
                                           std::string* directory,
-                                          std::string* error) const {
+                                          std::string* error,
+                                          std::uint64_t session_id,
+                                          std::uint64_t session_task_id) const {
   namespace fs = std::filesystem;
   std::error_code code;
   fs::create_directories(root, code);
@@ -38,7 +40,21 @@ bool ExperimentLogger::CreateRunDirectory(const std::string& root,
       if (error) *error = "Cannot create real-vehicle results root: " + code.message();
       return false;
     }
-    const fs::path candidate = real_root / ("task" + std::to_string(task_id));
+    const fs::path task_root = session_id > 0
+        ? real_root / ("stage" + std::to_string(session_id)) : real_root;
+    fs::create_directories(task_root, code);
+    if (code) {
+      if (error) *error = "Cannot create real-vehicle stage: " + code.message();
+      return false;
+    }
+    const std::uint64_t directory_task_id =
+        session_id > 0 ? session_task_id : static_cast<std::uint64_t>(task_id);
+    if (directory_task_id == 0) {
+      if (error) *error = "Real-vehicle session task id must be positive";
+      return false;
+    }
+    const fs::path candidate =
+        task_root / ("task" + std::to_string(directory_task_id));
     if (!fs::create_directory(candidate, code)) {
       if (error) {
         *error = code ? "Cannot create task directory: " + code.message()
@@ -196,6 +212,8 @@ bool ExperimentLogger::WriteSummary(
       << "package_version=0.1.0\n"
       << "mode=" << mode << '\n'
       << "task_id=" << task_id << '\n'
+      << "session_id=" << result.session_id << '\n'
+      << "session_task_id=" << result.session_task_id << '\n'
       << "cxx_standard=17\n"
       << "build_date=" << __DATE__ << '\n'
       << "build_time=" << __TIME__ << '\n'

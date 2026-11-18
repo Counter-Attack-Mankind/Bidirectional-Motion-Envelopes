@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <string>
 
@@ -37,6 +38,8 @@ struct PlanningRunResult {
   bool success = false;
   std::string status;
   std::string result_directory;
+  std::uint64_t session_id = 0;
+  std::uint64_t session_task_id = 0;
   double hybrid_elapsed = 0.0;
   planning::HybridSearchDirection hybrid_search_direction =
       planning::HybridSearchDirection::kStartToGoal;
@@ -67,7 +70,9 @@ class PlanningPipeline {
                         HybridCompleteCallback hybrid_complete = {},
                         HybridProgressCallback hybrid_progress = {},
                         CancellationCallback cancellation = {},
-                        StageCallback stage_callback = {}) const;
+                        StageCallback stage_callback = {},
+                        std::uint64_t session_id = 0,
+                        std::uint64_t session_task_id = 0) const;
 
  private:
   PlanningConfiguration configuration_;

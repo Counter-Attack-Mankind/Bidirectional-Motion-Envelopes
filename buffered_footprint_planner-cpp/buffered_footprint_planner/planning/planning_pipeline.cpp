@@ -29,8 +29,12 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
                                         HybridCompleteCallback hybrid_complete,
                                         HybridProgressCallback hybrid_progress,
                                         CancellationCallback cancellation,
-                                        StageCallback stage_callback) const {
+                                        StageCallback stage_callback,
+                                        std::uint64_t session_id,
+                                        std::uint64_t session_task_id) const {
   PlanningRunResult result;
+  result.session_id = session_id;
+  result.session_task_id = session_task_id;
   result.hybrid_search_direction = configuration_.hybrid_search_direction;
   result.hybrid_effective_config = planning::AdaptHybridSearchConfig(
       configuration_.planner, configuration_.hybrid_search_direction);
@@ -42,7 +46,9 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
           std::filesystem::path(result.result_directory) / "events.log",
           std::ios::app);
       if (events)
-        events << "task=" << snapshot.task_id << " planning_stage="
+        events << "session_id=" << session_id
+               << " session_task_id=" << session_task_id
+               << " task=" << snapshot.task_id << " planning_stage="
                << static_cast<int>(stage) << " state="
                << static_cast<int>(state) << " elapsed_s=" << stage_elapsed
                << " reason=" << message << '\n';
@@ -55,7 +61,7 @@ PlanningRunResult PlanningPipeline::Run(const scene::SceneSnapshot& snapshot,
   std::string error;
   if (!logger.CreateRunDirectory(configuration_.results_root, mode,
                                  snapshot.task_id, &result.result_directory,
-                                 &error)) {
+                                 &error, session_id, session_task_id)) {
     result.status = error;
     return result;
   }
